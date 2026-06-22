@@ -17,7 +17,7 @@ import anyio
 import chromadb
 import anthropic
 from fastapi import FastAPI, HTTPException, UploadFile, File
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
@@ -131,6 +131,12 @@ class ChatResponse(BaseModel):
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────
+
+@app.get("/widget.js")
+def widget_js():
+    js_path = Path(__file__).parent / "static" / "forsys-chat.js"
+    return Response(content=js_path.read_text(encoding="utf-8"), media_type="application/javascript")
+
 
 @app.get("/health")
 def health():
