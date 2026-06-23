@@ -623,7 +623,7 @@
     leads.forEach(lead => {
       const isExpanded = !lead._dummy && expandedId === lead.id;
       const dummyCls   = lead._dummy ? ' dummy-row' : '';
-      const clickAttr  = lead._dummy ? '' : `onclick="toggleExpand('${lead.id}')"`;
+      const clickAttr  = lead._dummy ? '' : `onclick="toggleExpand(${lead.id})"`;
       rows += `
         <tr ${clickAttr} class="${isExpanded ? 'expanded' : ''}${dummyCls}">
           <td class="td-name">${esc(lead.name)}</td>
@@ -632,8 +632,8 @@
           <td class="td-date">${fmtDate(lead.last_seen)}</td>
           <td><span class="td-count">${lead.message_count || 0}</span></td>
           <td class="td-actions" onclick="event.stopPropagation()">
-            <button class="btn btn-outline btn-sm ${lead._dummy ? 'btn-ghost' : ''}" onclick="${lead._dummy ? '' : `openEdit('${lead.id}', '${esc(lead.name)}', '${esc(lead.email)}')`}">Edit</button>
-            <button class="btn btn-danger btn-sm ${lead._dummy ? 'btn-ghost' : ''}" onclick="${lead._dummy ? '' : `deleteLead('${lead.id}', '${esc(lead.name)}')`}">Delete</button>
+            <button class="btn btn-outline btn-sm ${lead._dummy ? 'btn-ghost' : ''}" onclick="${lead._dummy ? '' : `openEdit(${lead.id}, '${esc(lead.name)}', '${esc(lead.email)}')`}">Edit</button>
+            <button class="btn btn-danger btn-sm ${lead._dummy ? 'btn-ghost' : ''}" onclick="${lead._dummy ? '' : `deleteLead(${lead.id}, '${esc(lead.name)}')`}">Delete</button>
           </td>
         </tr>
         ${isExpanded ? `<tr class="detail-row"><td colspan="6"><div class="detail-panel" id="detail-${lead.id}"><div class="spinner"></div></div></td></tr>` : ''}
