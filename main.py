@@ -7,7 +7,6 @@ Endpoints:
 """
 
 import os
-import re
 import json
 import tempfile
 from contextlib import asynccontextmanager
@@ -16,14 +15,14 @@ from pathlib import Path
 import anyio
 import chromadb
 import anthropic
+from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sentence_transformers import SentenceTransformer
 from dotenv import load_dotenv
 
-from ingest import extract_pdf_text, chunk_text, _embed_and_store, COLLECTION_NAME, CHROMA_PATH, EMBED_MODEL
+from ingest import extract_pdf_text, chunk_text, COLLECTION_NAME, CHROMA_PATH
 
 load_dotenv()
 
@@ -35,8 +34,8 @@ ALLOWED_ORIGINS = [
 ] or ["*"]
 EMBED_BASE_URL = os.getenv("EMBED_BASE_URL", "http://localhost:8080/embed")
 
-TOP_K = 5           # number of context chunks to retrieve
-MAX_HISTORY = 6     # conversation turns to keep in context
+TOP_K = 5
+MAX_HISTORY = 6
 
 SYSTEM_PROMPT = """You are ForsysGPT — a knowledgeable, professional AI assistant for Forsys Inc., a leading Revenue Lifecycle Management consulting firm.
 
@@ -67,37 +66,34 @@ CONTEXT:
 
 
 def embed_url_for(source: str) -> str | None:
-    """Return the embed page URL for a PDF source, or None if not a PDF."""
     if source.lower().endswith(".pdf"):
         stem = Path(source).stem
         return f"{EMBED_BASE_URL}/{stem}.html"
     return None
 
 
-# ── Startup: load shared resources once ──────────────────────────────────────
+# ── Globals ───────────────────────────────────────────────────────────────────
 
-embed_model: SentenceTransformer = None
+embed_fn: DefaultEmbeddingFunction = None
 chroma_collection = None
-anthropic_client: anthropic.Anthropic = None
 anthropic_async_client: anthropic.AsyncAnthropic = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global embed_model, chroma_collection, anthropic_client, anthropic_async_client
+    global embed_fn, chroma_collection, anthropic_async_client
 
     if not ANTHROPIC_API_KEY:
-        raise RuntimeError("ANTHROPIC_API_KEY is not set. Copy .env.example to .env and add your key.")
+        raise RuntimeError("ANTHROPIC_API_KEY is not set.")
 
-    print("Loading embedding model...")
-    embed_model = SentenceTransformer(EMBED_MODEL)
+    print("Loading embedding function...")
+    embed_fn = DefaultEmbeddingFunction()
 
     print("Connecting to ChromaDB...")
     client = chromadb.PersistentClient(path=CHROMA_PATH)
     chroma_collection = client.get_or_create_collection(COLLECTION_NAME)
     print(f"ChromaDB ready — {chroma_collection.count()} chunks indexed.")
 
-    anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     anthropic_async_client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
     print("Ready.")
     yield
@@ -117,17 +113,12 @@ app.add_middleware(
 # ── Models ────────────────────────────────────────────────────────────────────
 
 class Message(BaseModel):
-    role: str   # "user" or "assistant"
+    role: str
     content: str
 
 class ChatRequest(BaseModel):
     message: str
     history: list[Message] = []
-
-class ChatResponse(BaseModel):
-    reply: str
-    sources: list[str]
-    embed_links: dict[str, str] = {}  # source filename → embed page URL
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────
@@ -148,12 +139,10 @@ async def chat(req: ChatRequest):
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty.")
 
-    # 1. Embed the query (blocking — run in thread so event loop stays free)
     query_embedding = await anyio.to_thread.run_sync(
-        lambda: embed_model.encode([req.message])[0].tolist()
+        lambda: embed_fn([req.message])[0]
     )
 
-    # 2. Retrieve top-K relevant chunks
     results = chroma_collection.query(
         query_embeddings=[query_embedding],
         n_results=min(TOP_K, chroma_collection.count() or 1),
@@ -162,7 +151,6 @@ async def chat(req: ChatRequest):
     docs = results["documents"][0] if results["documents"] else []
     metas = results["metadatas"][0] if results["metadatas"] else []
 
-    # Build context
     embed_links: dict[str, str] = {}
     context_parts = []
     for doc, meta in zip(docs, metas):
@@ -176,13 +164,11 @@ async def chat(req: ChatRequest):
     context = "\n\n---\n\n".join(context_parts) if context_parts else "No relevant content found."
     sources = list({m.get("source", "") for m in metas if m.get("source")})
 
-    # 3. Build messages for Claude
     system = SYSTEM_PROMPT.format(context=context)
     history = req.history[-(MAX_HISTORY * 2):]
     messages = [{"role": m.role, "content": m.content} for m in history]
     messages.append({"role": "user", "content": req.message})
 
-    # 4. Stream response via SSE using fully async generator
     async def generate():
         try:
             yield f"data: {json.dumps({'type': 'meta', 'sources': sources, 'embed_links': embed_links})}\n\n"
@@ -208,7 +194,6 @@ async def chat(req: ChatRequest):
 
 @app.post("/ingest/pdf")
 async def ingest_pdf_upload(file: UploadFile = File(...)):
-    """Upload a PDF and add it to the knowledge base at runtime."""
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
 
@@ -219,7 +204,13 @@ async def ingest_pdf_upload(file: UploadFile = File(...)):
     try:
         text = extract_pdf_text(tmp_path)
         chunks = chunk_text(text, source=file.filename)
-        _embed_and_store(chunks, chroma_collection, embed_model, label=file.filename)
+        embeddings = embed_fn([c["text"] for c in chunks])
+        chroma_collection.add(
+            ids=[c["id"] for c in chunks],
+            embeddings=embeddings,
+            documents=[c["text"] for c in chunks],
+            metadatas=[c["metadata"] for c in chunks],
+        )
     finally:
         tmp_path.unlink(missing_ok=True)
 
