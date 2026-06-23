@@ -12,21 +12,14 @@ from pathlib import Path
 
 import anthropic
 from rank_bm25 import BM25Okapi
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse, Response
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
 load_dotenv()
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-ALLOWED_ORIGINS = [
-    o.strip()
-    for o in os.getenv("ALLOWED_ORIGINS", "*").split(",")
-    if o.strip()
-] or ["*"]
-
 TOP_K = 5
 MAX_HISTORY = 6
 
@@ -69,42 +62,42 @@ anthropic_async_client: anthropic.AsyncAnthropic = None
 async def lifespan(app: FastAPI):
     global docs, bm25, anthropic_async_client
 
-    try:
-        print(f"[1] ANTHROPIC_API_KEY set: {bool(ANTHROPIC_API_KEY)}", flush=True)
-        if not ANTHROPIC_API_KEY:
-            raise RuntimeError("ANTHROPIC_API_KEY is not set.")
+    if not ANTHROPIC_API_KEY:
+        raise RuntimeError("ANTHROPIC_API_KEY is not set.")
 
-        print("[2] Loading documents...", flush=True)
-        docs_path = Path(__file__).parent / "docs.json"
-        print(f"[2] docs.json path: {docs_path} exists={docs_path.exists()}", flush=True)
-        docs = json.loads(docs_path.read_text(encoding="utf-8"))
-        print(f"[2] Loaded {len(docs)} docs", flush=True)
+    print("[1] Loading documents...", flush=True)
+    docs_path = Path(__file__).parent / "docs.json"
+    docs = json.loads(docs_path.read_text(encoding="utf-8"))
 
-        print("[3] Building BM25 index...", flush=True)
-        tokenized = [d["text"].lower().split() for d in docs]
-        bm25 = BM25Okapi(tokenized)
-        print("[3] BM25 ready", flush=True)
+    print("[2] Building BM25 index...", flush=True)
+    tokenized = [d["text"].lower().split() for d in docs]
+    bm25 = BM25Okapi(tokenized)
 
-        print("[4] Creating Anthropic client...", flush=True)
-        anthropic_async_client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
-        print(f"[4] Ready — {len(docs)} documents indexed.", flush=True)
-    except Exception as e:
-        import traceback
-        print(f"[STARTUP FAILED] {type(e).__name__}: {e}", flush=True)
-        traceback.print_exc()
-        raise
+    print("[3] Creating Anthropic client...", flush=True)
+    anthropic_async_client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+    print(f"Ready — {len(docs)} documents indexed.", flush=True)
     yield
 
 
 app = FastAPI(title="Forsys RAG API", lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+
+# Single clean CORS middleware — handles preflight and adds headers to all responses
+@app.middleware("http")
+async def cors_middleware(request: Request, call_next):
+    if request.method == "OPTIONS":
+        return Response(
+            status_code=200,
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization",
+                "Access-Control-Max-Age": "86400",
+            },
+        )
+    response = await call_next(request)
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    return response
 
 
 # ── Models ────────────────────────────────────────────────────────────────────
@@ -136,7 +129,6 @@ async def chat(req: ChatRequest):
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty.")
 
-    # BM25 retrieval
     tokens = req.message.lower().split()
     scores = bm25.get_scores(tokens)
     top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:TOP_K]
@@ -166,16 +158,8 @@ async def chat(req: ChatRequest):
             print(f"[STREAM ERROR] {type(e).__name__}: {e}", flush=True)
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
-    origin = "*"
     return StreamingResponse(
         generate(),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-            "Access-Control-Allow-Origin": origin,
-            "Access-Control-Allow-Headers": "*",
-        },
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
-
-
