@@ -10,7 +10,9 @@ import json
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import asyncio
 import anthropic
+import httpx
 from rank_bm25 import BM25Okapi
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse, Response
@@ -20,6 +22,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",") if o.strip()] or ["*"]
 TOP_K = 5
 MAX_HISTORY = 6
 
@@ -76,7 +79,23 @@ async def lifespan(app: FastAPI):
     print("[3] Creating Anthropic client...", flush=True)
     anthropic_async_client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
     print(f"Ready — {len(docs)} documents indexed.", flush=True)
+
+    # Keep-alive: ping own /health every 10 min so Render free tier never spins down
+    render_url = os.getenv("RENDER_EXTERNAL_URL", "")
+    async def keep_alive():
+        while True:
+            await asyncio.sleep(600)
+            if render_url:
+                try:
+                    async with httpx.AsyncClient() as client:
+                        await client.get(f"{render_url}/health", timeout=10)
+                    print("[KEEP-ALIVE] pinged /health", flush=True)
+                except Exception as e:
+                    print(f"[KEEP-ALIVE] failed: {e}", flush=True)
+
+    task = asyncio.create_task(keep_alive())
     yield
+    task.cancel()
 
 
 app = FastAPI(title="Forsys RAG API", lifespan=lifespan)
@@ -86,17 +105,21 @@ app = FastAPI(title="Forsys RAG API", lifespan=lifespan)
 @app.middleware("http")
 async def cors_middleware(request: Request, call_next):
     if request.method == "OPTIONS":
+        origin = request.headers.get("origin", "*")
+        allowed = origin if ("*" in ALLOWED_ORIGINS or origin in ALLOWED_ORIGINS) else ""
         return Response(
             status_code=200,
             headers={
-                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Origin": allowed,
                 "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
                 "Access-Control-Allow-Headers": "Content-Type, Authorization",
                 "Access-Control-Max-Age": "86400",
             },
         )
     response = await call_next(request)
-    response.headers["Access-Control-Allow-Origin"] = "*"
+    origin = request.headers.get("origin", "")
+    if "*" in ALLOWED_ORIGINS or origin in ALLOWED_ORIGINS:
+        response.headers["Access-Control-Allow-Origin"] = origin or "*"
     return response
 
 
