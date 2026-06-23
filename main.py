@@ -1,28 +1,22 @@
 """
-Forsys RAG — FastAPI Backend
+Forsys RAG — FastAPI Backend (BM25 edition)
 Endpoints:
-  GET  /health          — liveness check
-  POST /chat            — RAG-powered chat
-  POST /ingest/pdf      — upload and index a PDF at runtime
+  GET  /health   — liveness check
+  POST /chat     — RAG-powered chat
 """
 
 import os
 import json
-import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import anyio
-import chromadb
 import anthropic
-from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from rank_bm25 import BM25Okapi
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
-
-from ingest import extract_pdf_text, chunk_text, COLLECTION_NAME, CHROMA_PATH
 
 load_dotenv()
 
@@ -32,7 +26,6 @@ ALLOWED_ORIGINS = [
     for o in os.getenv("ALLOWED_ORIGINS", "*").split(",")
     if o.strip()
 ] or ["*"]
-EMBED_BASE_URL = os.getenv("EMBED_BASE_URL", "http://localhost:8080/embed")
 
 TOP_K = 5
 MAX_HISTORY = 6
@@ -65,37 +58,30 @@ CONTEXT:
 {context}"""
 
 
-def embed_url_for(source: str) -> str | None:
-    if source.lower().endswith(".pdf"):
-        stem = Path(source).stem
-        return f"{EMBED_BASE_URL}/{stem}.html"
-    return None
-
-
 # ── Globals ───────────────────────────────────────────────────────────────────
 
-embed_fn: DefaultEmbeddingFunction = None
-chroma_collection = None
+docs: list[dict] = []
+bm25: BM25Okapi = None
 anthropic_async_client: anthropic.AsyncAnthropic = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global embed_fn, chroma_collection, anthropic_async_client
+    global docs, bm25, anthropic_async_client
 
     if not ANTHROPIC_API_KEY:
         raise RuntimeError("ANTHROPIC_API_KEY is not set.")
 
-    print("Loading embedding function...")
-    embed_fn = DefaultEmbeddingFunction()
+    print("Loading documents...")
+    docs_path = Path(__file__).parent / "docs.json"
+    docs = json.loads(docs_path.read_text(encoding="utf-8"))
 
-    print("Connecting to ChromaDB...")
-    client = chromadb.PersistentClient(path=CHROMA_PATH)
-    chroma_collection = client.get_or_create_collection(COLLECTION_NAME)
-    print(f"ChromaDB ready — {chroma_collection.count()} chunks indexed.")
+    print("Building BM25 index...")
+    tokenized = [d["text"].lower().split() for d in docs]
+    bm25 = BM25Okapi(tokenized)
 
     anthropic_async_client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
-    print("Ready.")
+    print(f"Ready — {len(docs)} documents indexed.")
     yield
 
 
@@ -131,7 +117,7 @@ def widget_js():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "chunks_indexed": chroma_collection.count()}
+    return {"status": "ok", "chunks_indexed": len(docs)}
 
 
 @app.post("/chat")
@@ -139,30 +125,14 @@ async def chat(req: ChatRequest):
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty.")
 
-    query_embedding = await anyio.to_thread.run_sync(
-        lambda: embed_fn([req.message])[0]
-    )
+    # BM25 retrieval
+    tokens = req.message.lower().split()
+    scores = bm25.get_scores(tokens)
+    top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:TOP_K]
+    top_docs = [docs[i] for i in top_indices]
 
-    results = chroma_collection.query(
-        query_embeddings=[query_embedding],
-        n_results=min(TOP_K, chroma_collection.count() or 1),
-        include=["documents", "metadatas"],
-    )
-    docs = results["documents"][0] if results["documents"] else []
-    metas = results["metadatas"][0] if results["metadatas"] else []
-
-    embed_links: dict[str, str] = {}
-    context_parts = []
-    for doc, meta in zip(docs, metas):
-        source = meta.get("source", "")
-        url = embed_url_for(source)
-        if url:
-            embed_links[source] = url
-            context_parts.append(f"[View Case Study: {url}]\n{doc}")
-        else:
-            context_parts.append(doc)
-    context = "\n\n---\n\n".join(context_parts) if context_parts else "No relevant content found."
-    sources = list({m.get("source", "") for m in metas if m.get("source")})
+    sources = list({d["source"] for d in top_docs if d["source"]})
+    context = "\n\n---\n\n".join(d["text"] for d in top_docs) or "No relevant content found."
 
     system = SYSTEM_PROMPT.format(context=context)
     history = req.history[-(MAX_HISTORY * 2):]
@@ -171,7 +141,7 @@ async def chat(req: ChatRequest):
 
     async def generate():
         try:
-            yield f"data: {json.dumps({'type': 'meta', 'sources': sources, 'embed_links': embed_links})}\n\n"
+            yield f"data: {json.dumps({'type': 'meta', 'sources': sources, 'embed_links': {}})}\n\n"
             async with anthropic_async_client.messages.stream(
                 model="claude-sonnet-4-6",
                 max_tokens=1024,
@@ -190,28 +160,3 @@ async def chat(req: ChatRequest):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
-
-
-@app.post("/ingest/pdf")
-async def ingest_pdf_upload(file: UploadFile = File(...)):
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
-
-    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-        tmp.write(await file.read())
-        tmp_path = Path(tmp.name)
-
-    try:
-        text = extract_pdf_text(tmp_path)
-        chunks = chunk_text(text, source=file.filename)
-        embeddings = embed_fn([c["text"] for c in chunks])
-        chroma_collection.add(
-            ids=[c["id"] for c in chunks],
-            embeddings=embeddings,
-            documents=[c["text"] for c in chunks],
-            metadatas=[c["metadata"] for c in chunks],
-        )
-    finally:
-        tmp_path.unlink(missing_ok=True)
-
-    return {"status": "ok", "chunks_added": len(chunks), "total": chroma_collection.count()}
