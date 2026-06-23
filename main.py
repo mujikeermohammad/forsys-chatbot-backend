@@ -166,10 +166,16 @@ async def chat(req: ChatRequest):
             print(f"[STREAM ERROR] {type(e).__name__}: {e}", flush=True)
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
+    origin = "*"
     return StreamingResponse(
         generate(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Headers": "*",
+        },
     )
 
 
