@@ -339,6 +339,20 @@
         let fullText = "";
         let sources  = [];
 
+        // Typewriter state
+        let typeQueue = "";
+        let isTyping  = false;
+
+        function typeNext() {
+          if (typeQueue.length === 0) { isTyping = false; return; }
+          isTyping = true;
+          fullText += typeQueue[0];
+          typeQueue = typeQueue.slice(1);
+          bubble.innerHTML = renderMarkdown(fullText);
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+          setTimeout(typeNext, 18);
+        }
+
         const reader  = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
@@ -360,9 +374,8 @@
               if (evt.type === "meta") {
                 sources = evt.sources || [];
               } else if (evt.type === "delta") {
-                fullText += evt.text;
-                bubble.innerHTML = renderMarkdown(fullText);
-                messagesEl.scrollTop = messagesEl.scrollHeight;
+                typeQueue += evt.text;
+                if (!isTyping) typeNext();
               } else if (evt.type === "done" && sources.length) {
                 const srcEl = document.createElement("div");
                 srcEl.className = "fc-sources";
@@ -377,6 +390,11 @@
             } catch (_) {}
           }
         }
+
+        // Wait for typewriter to finish before updating history
+        await new Promise(function(resolve) {
+          (function wait() { isTyping || typeQueue.length ? setTimeout(wait, 50) : resolve(); })();
+        });
 
         history.push({ role: "user", content: text });
         history.push({ role: "assistant", content: fullText });
