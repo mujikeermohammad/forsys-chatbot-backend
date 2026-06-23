@@ -69,19 +69,30 @@ anthropic_async_client: anthropic.AsyncAnthropic = None
 async def lifespan(app: FastAPI):
     global docs, bm25, anthropic_async_client
 
-    if not ANTHROPIC_API_KEY:
-        raise RuntimeError("ANTHROPIC_API_KEY is not set.")
+    try:
+        print(f"[1] ANTHROPIC_API_KEY set: {bool(ANTHROPIC_API_KEY)}", flush=True)
+        if not ANTHROPIC_API_KEY:
+            raise RuntimeError("ANTHROPIC_API_KEY is not set.")
 
-    print("Loading documents...")
-    docs_path = Path(__file__).parent / "docs.json"
-    docs = json.loads(docs_path.read_text(encoding="utf-8"))
+        print("[2] Loading documents...", flush=True)
+        docs_path = Path(__file__).parent / "docs.json"
+        print(f"[2] docs.json path: {docs_path} exists={docs_path.exists()}", flush=True)
+        docs = json.loads(docs_path.read_text(encoding="utf-8"))
+        print(f"[2] Loaded {len(docs)} docs", flush=True)
 
-    print("Building BM25 index...")
-    tokenized = [d["text"].lower().split() for d in docs]
-    bm25 = BM25Okapi(tokenized)
+        print("[3] Building BM25 index...", flush=True)
+        tokenized = [d["text"].lower().split() for d in docs]
+        bm25 = BM25Okapi(tokenized)
+        print("[3] BM25 ready", flush=True)
 
-    anthropic_async_client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
-    print(f"Ready — {len(docs)} documents indexed.")
+        print("[4] Creating Anthropic client...", flush=True)
+        anthropic_async_client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+        print(f"[4] Ready — {len(docs)} documents indexed.", flush=True)
+    except Exception as e:
+        import traceback
+        print(f"[STARTUP FAILED] {type(e).__name__}: {e}", flush=True)
+        traceback.print_exc()
+        raise
     yield
 
 
