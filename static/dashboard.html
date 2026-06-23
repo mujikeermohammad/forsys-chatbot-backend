@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ForsysGPT — Leads Dashboard</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --purple: #6B48FF;
+    --teal:   #00B4D8;
+    --dark:   #0D0D2B;
+    --mid:    #1a1a3e;
+    --surface:#F5F6FF;
+    --border: #e2e4f0;
+    --text:   #0D0D2B;
+    --muted:  #6b7280;
+    --red:    #ef4444;
+    --green:  #10b981;
+    --font:   'Inter', 'Segoe UI', sans-serif;
+    --radius: 12px;
+  }
+
+  body {
+    font-family: var(--font);
+    background: #f0f2fa;
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  .header {
+    background: linear-gradient(135deg, var(--dark), #1a0a60);
+    color: #fff;
+    padding: 18px 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 2px 20px rgba(107,72,255,.25);
+  }
+  .header-logo {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, var(--purple), var(--teal));
+    border-radius: 10px;
+    display: grid; place-items: center;
+    font-size: 18px; font-weight: 800; color: #fff;
+    flex-shrink: 0;
+  }
+  .header h1 { font-size: 18px; font-weight: 700; flex: 1; }
+  .header-sub { font-size: 13px; color: rgba(255,255,255,.55); }
+  #logout-btn {
+    background: rgba(255,255,255,.1);
+    border: 1px solid rgba(255,255,255,.2);
+    color: #fff;
+    padding: 7px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background .15s;
+  }
+  #logout-btn:hover { background: rgba(255,255,255,.18); }
+
+  /* ── Stats bar ── */
+  .stats-bar {
+    display: flex;
+    gap: 16px;
+    padding: 20px 32px;
+    flex-wrap: wrap;
+  }
+  .stat-card {
+    background: #fff;
+    border-radius: var(--radius);
+    padding: 18px 22px;
+    flex: 1;
+    min-width: 150px;
+    border: 1px solid var(--border);
+  }
+  .stat-card .stat-val {
+    font-size: 28px;
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--purple), var(--teal));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .stat-card .stat-label {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 2px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+  }
+
+  /* ── Toolbar ── */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 32px 16px;
+    flex-wrap: wrap;
+  }
+  .search-wrap {
+    position: relative;
+    flex: 1;
+    min-width: 200px;
+    max-width: 360px;
+  }
+  .search-wrap svg {
+    position: absolute;
+    left: 12px; top: 50%;
+    transform: translateY(-50%);
+    color: var(--muted);
+    pointer-events: none;
+  }
+  #search {
+    width: 100%;
+    padding: 9px 12px 9px 38px;
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    font-size: 14px;
+    font-family: var(--font);
+    outline: none;
+    background: #fff;
+    transition: border-color .15s;
+  }
+  #search:focus { border-color: var(--purple); }
+  .btn {
+    padding: 9px 16px;
+    border-radius: 10px;
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: var(--font);
+    border: none;
+    transition: opacity .15s, transform .1s;
+  }
+  .btn:hover { opacity: .88; transform: translateY(-1px); }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--purple), var(--teal));
+    color: #fff;
+  }
+  .btn-outline {
+    background: #fff;
+    border: 1.5px solid var(--border);
+    color: var(--text);
+  }
+  .btn-danger { background: var(--red); color: #fff; }
+  .btn-sm { padding: 5px 12px; font-size: 12.5px; border-radius: 8px; }
+
+  /* ── Table ── */
+  .table-wrap {
+    padding: 0 32px 32px;
+    overflow-x: auto;
+  }
+  table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    background: #fff;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+  thead tr { background: #f7f8ff; }
+  th {
+    padding: 13px 16px;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+  }
+  th:hover { color: var(--purple); }
+  th.sorted { color: var(--purple); }
+  th .sort-icon { margin-left: 4px; opacity: .4; }
+  th.sorted .sort-icon { opacity: 1; }
+  tbody tr {
+    cursor: pointer;
+    transition: background .12s;
+  }
+  tbody tr:hover { background: #f7f8ff; }
+  tbody tr.expanded { background: #f0f2ff; }
+  td {
+    padding: 14px 16px;
+    font-size: 14px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  .td-name { font-weight: 600; }
+  .td-email { color: var(--muted); font-size: 13px; }
+  .td-count {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: #f0f2ff;
+    color: var(--purple);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 100px;
+  }
+  .td-date { color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .td-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+
+  /* ── Expanded row ── */
+  .detail-row td { padding: 0; }
+  .detail-panel {
+    background: #f7f8ff;
+    border-top: 1px solid var(--border);
+    padding: 20px 20px 20px 40px;
+  }
+  .detail-panel h3 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--muted);
+    margin-bottom: 14px;
+    font-weight: 600;
+  }
+  .conv-item {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 10px;
+    overflow: hidden;
+  }
+  .conv-q {
+    padding: 12px 14px;
+    font-size: 13.5px;
+    font-weight: 600;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+  }
+  .conv-q::before {
+    content: 'Q';
+    width: 20px; height: 20px;
+    background: linear-gradient(135deg, var(--purple), var(--teal));
+    color: #fff;
+    font-size: 10px;
+    font-weight: 800;
+    border-radius: 6px;
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .conv-a {
+    padding: 12px 14px;
+    font-size: 13px;
+    color: var(--muted);
+    white-space: pre-wrap;
+    line-height: 1.6;
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+  }
+  .conv-a::before {
+    content: 'A';
+    width: 20px; height: 20px;
+    background: #f0f2ff;
+    color: var(--purple);
+    font-size: 10px;
+    font-weight: 800;
+    border-radius: 6px;
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .conv-time { font-size: 11px; color: #aaa; margin-left: auto; flex-shrink: 0; }
+  .no-answer { color: #ccc; font-style: italic; }
+  .no-messages { font-size: 13px; color: var(--muted); font-style: italic; }
+
+  /* ── Empty state ── */
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--muted);
+  }
+  .empty-state svg { margin-bottom: 16px; opacity: .3; }
+  .empty-state p { font-size: 15px; }
+
+  /* ── Modal ── */
+  .modal-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.45);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: #fff;
+    border-radius: 16px;
+    padding: 28px;
+    width: 420px;
+    max-width: 95vw;
+    box-shadow: 0 24px 64px rgba(0,0,0,.2);
+  }
+  .modal h2 { font-size: 17px; margin-bottom: 18px; }
+  .modal-field {
+    margin-bottom: 14px;
+  }
+  .modal-field label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--muted);
+    margin-bottom: 5px;
+  }
+  .modal-field input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    font-size: 14px;
+    font-family: var(--font);
+    outline: none;
+    transition: border-color .15s;
+  }
+  .modal-field input:focus { border-color: var(--purple); }
+  .modal-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 20px;
+  }
+
+  /* ── Toast ── */
+  #toast {
+    position: fixed;
+    bottom: 24px; right: 24px;
+    background: var(--dark);
+    color: #fff;
+    padding: 12px 18px;
+    border-radius: 10px;
+    font-size: 13.5px;
+    font-weight: 500;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity .2s, transform .2s;
+    z-index: 2000;
+    pointer-events: none;
+  }
+  #toast.show { opacity: 1; transform: none; }
+
+  /* ── Loading ── */
+  .spinner {
+    width: 32px; height: 32px;
+    border: 3px solid var(--border);
+    border-top-color: var(--purple);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    margin: 60px auto;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) {
+    .spinner { animation: none; border-top-color: var(--purple); }
+  }
+
+  @media (max-width: 640px) {
+    .header, .stats-bar, .toolbar, .table-wrap { padding-left: 16px; padding-right: 16px; }
+    th, td { padding: 10px 10px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-logo">F</div>
+  <div>
+    <h1>ForsysGPT Leads</h1>
+    <div class="header-sub">Chat lead capture dashboard</div>
+  </div>
+  <button id="logout-btn" onclick="logout()">Sign out</button>
+</div>
+
+<div class="stats-bar" id="stats-bar">
+  <div class="stat-card"><div class="stat-val" id="stat-total">—</div><div class="stat-label">Total Leads</div></div>
+  <div class="stat-card"><div class="stat-val" id="stat-today">—</div><div class="stat-label">Today</div></div>
+  <div class="stat-card"><div class="stat-val" id="stat-msgs">—</div><div class="stat-label">Total Questions</div></div>
+  <div class="stat-card"><div class="stat-val" id="stat-avg">—</div><div class="stat-label">Avg Questions / Lead</div></div>
+</div>
+
+<div class="toolbar">
+  <div class="search-wrap">
+    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+    </svg>
+    <input id="search" type="search" placeholder="Search by name or email…" oninput="renderTable()">
+  </div>
+  <button class="btn btn-outline" onclick="exportCSV()">
+    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="display:inline;margin-right:5px;vertical-align:-2px" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    Export CSV
+  </button>
+  <button class="btn btn-primary" onclick="loadLeads()">
+    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="display:inline;margin-right:5px;vertical-align:-2px" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.48"/></svg>
+    Refresh
+  </button>
+</div>
+
+<div class="table-wrap" id="table-wrap">
+  <div class="spinner"></div>
+</div>
+
+<!-- Edit Modal -->
+<div class="modal-overlay" id="edit-modal">
+  <div class="modal">
+    <h2>Edit Lead</h2>
+    <div class="modal-field">
+      <label>Name</label>
+      <input id="edit-name" type="text" placeholder="Full name">
+    </div>
+    <div class="modal-field">
+      <label>Email</label>
+      <input id="edit-email" type="email" placeholder="Email address">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeEditModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveEdit()">Save changes</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+  const TOKEN = '__TOKEN__';
+  const API   = window.location.origin;
+
+  let allLeads       = [];
+  let sortKey        = 'last_seen';
+  let sortDir        = -1; // -1 = desc
+  let expandedId     = null;
+  let editingId      = null;
+  let messagesCache  = {};
+
+  // ── Logout ──────────────────────────────────────────────────────────────────
+  function logout() {
+    window.location.href = '/dashboard?token=';
+  }
+
+  // ── Toast ────────────────────────────────────────────────────────────────────
+  function toast(msg, ms = 2800) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    setTimeout(() => el.classList.remove('show'), ms);
+  }
+
+  // ── Load ─────────────────────────────────────────────────────────────────────
+  async function loadLeads() {
+    document.getElementById('table-wrap').innerHTML = '<div class="spinner"></div>';
+    try {
+      const res = await fetch(`${API}/api/leads?token=${TOKEN}`);
+      if (!res.ok) throw new Error('Auth failed — check your token.');
+      allLeads = await res.json();
+      messagesCache = {};
+      updateStats();
+      renderTable();
+    } catch(e) {
+      document.getElementById('table-wrap').innerHTML = `<p style="padding:40px 32px;color:#ef4444">${e.message}</p>`;
+    }
+  }
+
+  // ── Stats ─────────────────────────────────────────────────────────────────────
+  function updateStats() {
+    const today = new Date().toISOString().slice(0, 10);
+    const todayCount = allLeads.filter(l => l.first_seen.slice(0, 10) === today).length;
+    const totalMsgs  = allLeads.reduce((s, l) => s + (l.message_count || 0), 0);
+    const avg = allLeads.length ? (totalMsgs / allLeads.length).toFixed(1) : '—';
+    document.getElementById('stat-total').textContent = allLeads.length;
+    document.getElementById('stat-today').textContent = todayCount;
+    document.getElementById('stat-msgs').textContent  = totalMsgs;
+    document.getElementById('stat-avg').textContent   = avg;
+  }
+
+  // ── Render table ─────────────────────────────────────────────────────────────
+  function renderTable() {
+    const q    = document.getElementById('search').value.toLowerCase().trim();
+    let leads  = allLeads.filter(l =>
+      !q || l.name.toLowerCase().includes(q) || l.email.toLowerCase().includes(q)
+    );
+
+    leads = leads.sort((a, b) => {
+      let av = a[sortKey] ?? '', bv = b[sortKey] ?? '';
+      if (sortKey === 'message_count') { av = +av; bv = +bv; }
+      return av < bv ? sortDir : av > bv ? -sortDir : 0;
+    });
+
+    const wrap = document.getElementById('table-wrap');
+
+    if (!leads.length) {
+      wrap.innerHTML = `
+        <div class="empty-state">
+          <svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+          <p>${allLeads.length ? 'No results for your search.' : 'No leads yet. Leads appear after users chat with ForsysGPT.'}</p>
+        </div>`;
+      return;
+    }
+
+    const cols = [
+      { key: 'name',          label: 'Name' },
+      { key: 'email',         label: 'Email' },
+      { key: 'first_seen',    label: 'First Seen' },
+      { key: 'last_seen',     label: 'Last Active' },
+      { key: 'message_count', label: 'Questions' },
+    ];
+
+    let rows = '';
+    leads.forEach(lead => {
+      const isExpanded = expandedId === lead.id;
+      rows += `
+        <tr onclick="toggleExpand(${lead.id})" class="${isExpanded ? 'expanded' : ''}">
+          <td class="td-name">${esc(lead.name)}</td>
+          <td class="td-email">${esc(lead.email)}</td>
+          <td class="td-date">${fmtDate(lead.first_seen)}</td>
+          <td class="td-date">${fmtDate(lead.last_seen)}</td>
+          <td><span class="td-count">${lead.message_count || 0}</span></td>
+          <td class="td-actions" onclick="event.stopPropagation()">
+            <button class="btn btn-outline btn-sm" onclick="openEdit(${lead.id}, '${esc(lead.name)}', '${esc(lead.email)}')">Edit</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteLead(${lead.id}, '${esc(lead.name)}')">Delete</button>
+          </td>
+        </tr>
+        ${isExpanded ? `<tr class="detail-row"><td colspan="6"><div class="detail-panel" id="detail-${lead.id}"><div class="spinner"></div></div></td></tr>` : ''}
+      `;
+    });
+
+    const thHtml = cols.map(c => {
+      const active = sortKey === c.key;
+      const icon   = active ? (sortDir === -1 ? '↓' : '↑') : '↕';
+      return `<th class="${active ? 'sorted' : ''}" onclick="setSort('${c.key}')">${c.label} <span class="sort-icon">${icon}</span></th>`;
+    }).join('') + '<th>Actions</th>';
+
+    wrap.innerHTML = `
+      <table>
+        <thead><tr>${thHtml}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+
+    if (isExpanded !== null && expandedId !== null) {
+      loadMessages(expandedId);
+    }
+  }
+
+  // ── Expand / collapse ─────────────────────────────────────────────────────────
+  function toggleExpand(id) {
+    expandedId = expandedId === id ? null : id;
+    renderTable();
+    if (expandedId) loadMessages(expandedId);
+  }
+
+  async function loadMessages(id) {
+    const panel = document.getElementById(`detail-${id}`);
+    if (!panel) return;
+
+    if (messagesCache[id]) { renderMessages(id, messagesCache[id]); return; }
+
+    try {
+      const res = await fetch(`${API}/api/leads/${id}/messages?token=${TOKEN}`);
+      messagesCache[id] = await res.json();
+      renderMessages(id, messagesCache[id]);
+    } catch {
+      if (panel) panel.innerHTML = '<p class="no-messages">Could not load messages.</p>';
+    }
+  }
+
+  function renderMessages(id, msgs) {
+    const panel = document.getElementById(`detail-${id}`);
+    if (!panel) return;
+    if (!msgs.length) {
+      panel.innerHTML = '<h3>Conversation history</h3><p class="no-messages">No questions recorded yet.</p>';
+      return;
+    }
+    const items = msgs.map(m => `
+      <div class="conv-item">
+        <div class="conv-q">${esc(m.question)}<span class="conv-time">${fmtDate(m.created_at)}</span></div>
+        <div class="conv-a">${m.answer ? esc(m.answer).substring(0, 800) + (m.answer.length > 800 ? '…' : '') : '<span class="no-answer">No response recorded</span>'}</div>
+      </div>`).join('');
+    panel.innerHTML = `<h3>Conversation history (${msgs.length} question${msgs.length !== 1 ? 's' : ''})</h3>${items}`;
+  }
+
+  // ── Sort ──────────────────────────────────────────────────────────────────────
+  function setSort(key) {
+    if (sortKey === key) sortDir *= -1;
+    else { sortKey = key; sortDir = -1; }
+    renderTable();
+  }
+
+  // ── Edit ──────────────────────────────────────────────────────────────────────
+  function openEdit(id, name, email) {
+    editingId = id;
+    document.getElementById('edit-name').value  = name;
+    document.getElementById('edit-email').value = email;
+    document.getElementById('edit-modal').classList.add('open');
+    document.getElementById('edit-name').focus();
+  }
+  function closeEditModal() {
+    document.getElementById('edit-modal').classList.remove('open');
+    editingId = null;
+  }
+  async function saveEdit() {
+    const name  = document.getElementById('edit-name').value.trim();
+    const email = document.getElementById('edit-email').value.trim();
+    if (!name || !email) { toast('Name and email are required.'); return; }
+    try {
+      const res = await fetch(`${API}/api/leads/${editingId}?token=${TOKEN}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email }),
+      });
+      if (!res.ok) throw new Error();
+      const lead = allLeads.find(l => l.id === editingId);
+      if (lead) { lead.name = name; lead.email = email; }
+      closeEditModal();
+      renderTable();
+      toast('Lead updated.');
+    } catch { toast('Update failed. Please try again.'); }
+  }
+
+  // ── Delete ────────────────────────────────────────────────────────────────────
+  async function deleteLead(id, name) {
+    if (!confirm(`Delete lead "${name}" and all their messages? This cannot be undone.`)) return;
+    try {
+      const res = await fetch(`${API}/api/leads/${id}?token=${TOKEN}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error();
+      allLeads = allLeads.filter(l => l.id !== id);
+      if (expandedId === id) expandedId = null;
+      delete messagesCache[id];
+      updateStats();
+      renderTable();
+      toast('Lead deleted.');
+    } catch { toast('Delete failed. Please try again.'); }
+  }
+
+  // ── Export CSV ────────────────────────────────────────────────────────────────
+  function exportCSV() {
+    const rows = [['ID', 'Name', 'Email', 'First Seen', 'Last Active', 'Questions']];
+    allLeads.forEach(l => rows.push([l.id, l.name, l.email, l.first_seen, l.last_seen, l.message_count]));
+    const csv  = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const link = document.createElement('a');
+    link.href  = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+    link.download = `forsysgpt-leads-${new Date().toISOString().slice(0,10)}.csv`;
+    link.click();
+    toast('CSV exported.');
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────────
+  function fmtDate(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return d.toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit' });
+  }
+  function esc(s) {
+    return String(s ?? '')
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+
+  // Close modal on backdrop click
+  document.getElementById('edit-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeEditModal();
+  });
+
+  // Keyboard close
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeEditModal(); });
+
+  // Init
+  loadLeads();
+</script>
+</body>
+</html>

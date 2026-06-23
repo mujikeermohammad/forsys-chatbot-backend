@@ -1,19 +1,18 @@
 /**
- * ForsysGPT — Chat Widget
+ * ForsysGPT — Chat Widget (with lead capture)
  * Drop-in script: <script src="forsys-chat.js" data-api="https://your-api-url"></script>
  *
  * Config attributes on the <script> tag:
  *   data-api       — required: base URL of the FastAPI backend
  *   data-title     — widget header title (default: "ForsysGPT")
  *   data-greeting  — first message from the bot
- *   data-theme     — "light" (default) | "dark"
  */
 (function () {
   "use strict";
 
-  const script = document.currentScript || document.querySelector('script[data-api]');
+  const script   = document.currentScript || document.querySelector('script[data-api]');
   const API_BASE = (script && script.getAttribute("data-api")) || "http://localhost:8000";
-  const TITLE = (script && script.getAttribute("data-title")) || "ForsysGPT";
+  const TITLE    = (script && script.getAttribute("data-title")) || "ForsysGPT";
   const GREETING =
     (script && script.getAttribute("data-greeting")) ||
     "Hi! I'm ForsysGPT. Ask me anything about our services, solutions, or how we can help your business.";
@@ -48,7 +47,7 @@
     #fc-panel {
       position: fixed; bottom: 92px; right: 24px; z-index: 9998;
       width: 380px; max-width: calc(100vw - 32px);
-      height: 560px; max-height: calc(100vh - 120px);
+      height: 580px; max-height: calc(100vh - 120px);
       background: var(--fc-white); border-radius: var(--fc-radius);
       box-shadow: var(--fc-shadow); display: flex; flex-direction: column;
       font-family: var(--fc-font); overflow: hidden;
@@ -66,7 +65,6 @@
     }
     #fc-header img { width: 32px; border-radius: 50%; padding: 4px; flex-shrink: 0; }
     #fc-header-title { font-size: 15px; font-weight: 600; flex: 1; }
-    #fc-header-sub { font-size: 11px; opacity: .8; margin-top: 1px; }
     #fc-dot {
       width: 8px; height: 8px; border-radius: 50%;
       background: #4ade80; flex-shrink: 0;
@@ -77,6 +75,61 @@
       0%,100% { box-shadow: 0 0 0 2px rgba(74,222,128,.3); }
       50%      { box-shadow: 0 0 0 5px rgba(74,222,128,.1); }
     }
+
+    /* ── Pre-chat form ── */
+    #fc-prechat {
+      flex: 1; display: flex; flex-direction: column;
+      background: var(--fc-bg); padding: 22px 20px 18px; gap: 14px;
+      overflow-y: auto;
+    }
+    #fc-prechat-intro { display: flex; gap: 10px; align-items: flex-start; }
+    #fc-prechat-avatar {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: #fff; border: 1.5px solid var(--fc-border);
+      display: grid; place-items: center; flex-shrink: 0; overflow: hidden; padding: 5px;
+    }
+    #fc-prechat-avatar img { width: 100%; border-radius: 50%; display: block; }
+    #fc-prechat-bubble {
+      background: var(--fc-white); border: 1px solid var(--fc-border);
+      border-radius: 12px; border-bottom-left-radius: 4px;
+      padding: 10px 13px; font-size: 13.5px; line-height: 1.55;
+      color: var(--fc-dark); flex: 1;
+    }
+    #fc-prechat h3 {
+      font-size: 13.5px; font-weight: 700; color: var(--fc-dark); margin: 0;
+      padding-top: 2px;
+    }
+    #fc-prechat p {
+      font-size: 12.5px; color: var(--fc-muted); margin: 0;
+      line-height: 1.5;
+    }
+    .fc-field { display: flex; flex-direction: column; gap: 5px; }
+    .fc-field label {
+      font-size: 12px; font-weight: 600; color: var(--fc-dark);
+      text-transform: uppercase; letter-spacing: .04em;
+    }
+    .fc-field input {
+      padding: 9px 12px; border: 1.5px solid var(--fc-border);
+      border-radius: 10px; font-size: 14px; font-family: var(--fc-font);
+      outline: none; background: var(--fc-white); color: var(--fc-dark);
+      transition: border-color .15s;
+    }
+    .fc-field input:focus { border-color: var(--fc-purple); }
+    #fc-prechat-submit {
+      width: 100%; padding: 11px; border-radius: 10px; border: none;
+      background: linear-gradient(135deg, var(--fc-purple), var(--fc-teal));
+      color: #fff; font-size: 14px; font-weight: 600;
+      cursor: pointer; font-family: var(--fc-font);
+      transition: opacity .15s; margin-top: 2px;
+    }
+    #fc-prechat-submit:hover { opacity: .9; }
+    #fc-prechat-skip {
+      text-align: center; font-size: 12px; color: var(--fc-muted);
+      cursor: pointer; text-decoration: underline; text-underline-offset: 2px;
+    }
+    #fc-prechat-skip:hover { color: var(--fc-purple); }
+
+    /* ── Messages ── */
     #fc-messages {
       flex: 1; overflow-y: auto; padding: 16px;
       display: flex; flex-direction: column; gap: 12px;
@@ -85,7 +138,6 @@
     }
     #fc-messages::-webkit-scrollbar { width: 4px; }
     #fc-messages::-webkit-scrollbar-thumb { background: var(--fc-border); border-radius: 4px; }
-    #fc-messages::-webkit-scrollbar-track { background: transparent; }
 
     .fc-msg { display: flex; gap: 8px; max-width: 88%; animation: fc-fadein .2s ease; }
     @keyframes fc-fadein { from { opacity:0; transform: translateY(6px); } to { opacity:1; transform:none; } }
@@ -98,7 +150,7 @@
     }
     .fc-msg.bot  .fc-avatar { background: #fff; overflow: hidden; padding: 6px; }
     .fc-msg.bot  .fc-avatar img { width: 100%; border-radius: 50%; display: block; }
-    .fc-msg.user .fc-avatar { background: var(--fc-dark); color:#fff; }
+    .fc-msg.user .fc-avatar { background: var(--fc-dark); color:#fff; font-weight: 600; }
 
     .fc-bubble {
       padding: 10px 13px; border-radius: 12px; font-size: 13.5px; line-height: 1.55;
@@ -153,6 +205,10 @@
     .fc-bubble strong { font-weight: 600; }
     .fc-bubble hr { border: none; border-top: 1px solid var(--fc-border); margin: 8px 0; }
     .fc-bubble a { color: var(--fc-purple); text-decoration: none; }
+
+    @media (prefers-reduced-motion: reduce) {
+      #fc-panel, #fc-fab, .fc-msg { transition: none !important; animation: none !important; }
+    }
   `;
 
   function injectStyles() {
@@ -187,8 +243,29 @@
         </div>
         <div id="fc-dot" title="Online"></div>
       </div>
-      <div id="fc-messages" aria-live="polite"></div>
-      <div id="fc-footer">
+
+      <div id="fc-prechat">
+        <div id="fc-prechat-intro">
+          <div id="fc-prechat-avatar">
+            <img src="https://www.forsysinc.com/blog/wp-content/uploads/2026/06/Forsys_cloud.png" alt="ForsysGPT">
+          </div>
+          <div id="fc-prechat-bubble">${GREETING}</div>
+        </div>
+        <h3>Before we start &mdash; <em style="font-weight:400;color:var(--fc-muted)">optional</em></h3>
+        <p>Share your details so we can follow up. Or just start chatting.</p>
+        <div class="fc-field" id="fc-name-field">
+          <label for="fc-name-input">Your name</label>
+          <input id="fc-name-input" type="text" placeholder="Jane Smith" autocomplete="name">
+        </div>
+        <div class="fc-field" id="fc-email-field">
+          <label for="fc-email-input">Work email</label>
+          <input id="fc-email-input" type="email" placeholder="jane@company.com" autocomplete="email">
+        </div>
+        <button id="fc-prechat-submit">Start chatting &rarr;</button>
+      </div>
+
+      <div id="fc-messages" aria-live="polite" style="display:none"></div>
+      <div id="fc-footer" style="display:none">
         <textarea id="fc-input" placeholder="Ask me anything about Forsys..." rows="1" aria-label="Message"></textarea>
         <button id="fc-send" aria-label="Send">
           <svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg>
@@ -211,13 +288,17 @@
       .replace(/\*(.+?)\*/g, '<em>$1</em>')
       .replace(/`([^`]+)`/g, '<code>$1</code>')
       .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
-      .replace(/((?:^[*-] .+\n?)+)/gm, b => '<ul>' + b.trim().split('\n').map(l => `<li>${l.replace(/^[*-] /, '')}</li>`).join('') + '</ul>')
-      .split('\n').map(l => /^<(h[1-3]|ul|ol|li|hr)/.test(l.trim()) || !l.trim() ? l : `<p>${l}</p>`).join('\n');
+      .replace(/((?:^[*-] .+\n?)+)/gm, function(b) {
+        return '<ul>' + b.trim().split('\n').map(function(l) { return '<li>' + l.replace(/^[*-] /, '') + '</li>'; }).join('') + '</ul>';
+      })
+      .split('\n').map(function(l) {
+        return /^<(h[1-3]|ul|ol|li|hr)/.test(l.trim()) || !l.trim() ? l : '<p>' + l + '</p>';
+      }).join('\n');
   }
 
-  function addMessage(container, role, text, sources) {
-    const wrap = document.createElement("div");
-    wrap.className = `fc-msg ${role}`;
+  function addMessage(container, role, text) {
+    const wrap   = document.createElement("div");
+    wrap.className = "fc-msg " + role;
 
     const avatar = document.createElement("div");
     avatar.className = "fc-avatar";
@@ -230,7 +311,7 @@
       avatar.textContent = "U";
     }
 
-    const inner = document.createElement("div");
+    const inner  = document.createElement("div");
     inner.style.display = "flex";
     inner.style.flexDirection = "column";
     inner.style.gap = "0";
@@ -244,65 +325,94 @@
     }
     inner.appendChild(bubble);
 
-    if (sources && sources.length) {
-      const srcEl = document.createElement("div");
-      srcEl.className = "fc-sources";
-      sources.forEach(s => {
-        const chip = document.createElement("span");
-        chip.className = "fc-source-chip";
-        chip.textContent = s;
-        srcEl.appendChild(chip);
-      });
-      inner.appendChild(srcEl);
-    }
-
     wrap.appendChild(avatar);
     wrap.appendChild(inner);
     container.appendChild(wrap);
     container.scrollTop = container.scrollHeight;
-    return wrap;
+    return { wrap, bubble, inner };
   }
 
   function addTyping(container) {
     const wrap = document.createElement("div");
     wrap.className = "fc-msg bot";
-    wrap.innerHTML = `<div class="fc-avatar"><img src="https://www.forsysinc.com/blog/wp-content/uploads/2026/06/Forsys_cloud.png" alt="ForsysGPT"></div><div class="fc-bubble fc-typing"><span></span><span></span><span></span></div>`;
+    wrap.innerHTML = '<div class="fc-avatar"><img src="https://www.forsysinc.com/blog/wp-content/uploads/2026/06/Forsys_cloud.png" alt="ForsysGPT"></div><div class="fc-bubble fc-typing"><span></span><span></span><span></span></div>';
     container.appendChild(wrap);
     container.scrollTop = container.scrollHeight;
     return wrap;
   }
 
+  function isValidEmail(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  }
+
   function init() {
     injectStyles();
-    const { fab, panel } = buildWidget();
+    var _r = buildWidget();
+    var fab   = _r.fab;
+    var panel = _r.panel;
 
-    const messagesEl = panel.querySelector("#fc-messages");
-    const inputEl = panel.querySelector("#fc-input");
-    const sendBtn = panel.querySelector("#fc-send");
+    var prechatEl = panel.querySelector("#fc-prechat");
+    var messagesEl = panel.querySelector("#fc-messages");
+    var footerEl   = panel.querySelector("#fc-footer");
+    var inputEl    = panel.querySelector("#fc-input");
+    var sendBtn    = panel.querySelector("#fc-send");
 
-    let isOpen = false;
-    let isLoading = false;
-    const history = [];
+    var nameInput   = panel.querySelector("#fc-name-input");
+    var emailInput  = panel.querySelector("#fc-email-input");
+    var submitBtn   = panel.querySelector("#fc-prechat-submit");
 
-    // Greeting
-    addMessage(messagesEl, "bot", GREETING);
+    var isOpen      = false;
+    var isLoading   = false;
+    var leadName    = "";
+    var leadEmail   = "";
+    var history     = [];
+
+    function showChat() {
+      prechatEl.style.display = "none";
+      messagesEl.style.display = "flex";
+      footerEl.style.display   = "flex";
+      addMessage(messagesEl, "bot", GREETING);
+      inputEl.focus();
+    }
 
     function toggle() {
       isOpen = !isOpen;
       fab.classList.toggle("is-open", isOpen);
       panel.classList.toggle("is-open", isOpen);
-      if (isOpen) inputEl.focus();
+      if (isOpen) {
+        if (messagesEl.style.display !== "none") inputEl.focus();
+        else nameInput.focus();
+      }
     }
+
+    // Pre-chat form submit (fields are optional)
+    submitBtn.addEventListener("click", function() {
+      var n = nameInput.value.trim();
+      var e = emailInput.value.trim();
+      if (n && e && isValidEmail(e)) {
+        leadName  = n;
+        leadEmail = e;
+      }
+      showChat();
+    });
+
+    // Allow Enter in email field to submit
+    emailInput.addEventListener("keydown", function(e) {
+      if (e.key === "Enter") { e.preventDefault(); submitBtn.click(); }
+    });
+    nameInput.addEventListener("keydown", function(e) {
+      if (e.key === "Enter") { e.preventDefault(); emailInput.focus(); }
+    });
 
     fab.addEventListener("click", toggle);
 
     // Auto-resize textarea
-    inputEl.addEventListener("input", () => {
+    inputEl.addEventListener("input", function() {
       inputEl.style.height = "auto";
       inputEl.style.height = Math.min(inputEl.scrollHeight, 100) + "px";
     });
 
-    inputEl.addEventListener("keydown", (e) => {
+    inputEl.addEventListener("keydown", function(e) {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         send();
@@ -311,7 +421,7 @@
     sendBtn.addEventListener("click", send);
 
     async function send() {
-      const text = inputEl.value.trim();
+      var text = inputEl.value.trim();
       if (!text || isLoading) return;
 
       inputEl.value = "";
@@ -320,28 +430,33 @@
       sendBtn.disabled = true;
 
       addMessage(messagesEl, "user", text);
-      const typingEl = addTyping(messagesEl);
+      var typingEl = addTyping(messagesEl);
 
       try {
-        const res = await fetch(`${API_BASE}/chat`, {
+        var body = { message: text, history: history };
+        if (leadName && leadEmail) {
+          body.name  = leadName;
+          body.email = leadEmail;
+        }
+
+        var res = await fetch(API_BASE + "/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: text, history }),
+          body: JSON.stringify(body),
         });
 
         typingEl.remove();
-        if (!res.ok) throw new Error(`Server error ${res.status}`);
+        if (!res.ok) throw new Error("Server error " + res.status);
 
-        // Backend returns SSE stream — read it chunk by chunk
-        const msgWrap = addMessage(messagesEl, "bot", "");
-        const bubble  = msgWrap.querySelector(".fc-bubble");
-        const inner   = bubble.parentElement;
-        let fullText = "";
-        let sources  = [];
+        var _m = addMessage(messagesEl, "bot", "");
+        var bubble   = _m.bubble;
+        var inner    = _m.inner;
+        var fullText = "";
+        var sources  = [];
 
         // Typewriter state
-        let typeQueue = "";
-        let isTyping  = false;
+        var typeQueue = "";
+        var isTyping  = false;
 
         function typeNext() {
           if (typeQueue.length === 0) { isTyping = false; return; }
@@ -353,34 +468,35 @@
           setTimeout(typeNext, 18);
         }
 
-        const reader  = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
+        var reader  = res.body.getReader();
+        var decoder = new TextDecoder();
+        var buffer  = "";
 
         while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+          var _read = await reader.read();
+          if (_read.done) break;
 
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
+          buffer += decoder.decode(_read.value, { stream: true });
+          var lines = buffer.split("\n");
           buffer = lines.pop();
 
-          for (const line of lines) {
+          for (var i = 0; i < lines.length; i++) {
+            var line = lines[i];
             if (!line.startsWith("data: ")) continue;
-            const raw = line.slice(6).trim();
+            var raw = line.slice(6).trim();
             if (!raw) continue;
             try {
-              const evt = JSON.parse(raw);
+              var evt = JSON.parse(raw);
               if (evt.type === "meta") {
                 sources = evt.sources || [];
               } else if (evt.type === "delta") {
                 typeQueue += evt.text;
                 if (!isTyping) typeNext();
               } else if (evt.type === "done" && sources.length) {
-                const srcEl = document.createElement("div");
+                var srcEl = document.createElement("div");
                 srcEl.className = "fc-sources";
                 sources.forEach(function(s) {
-                  const chip = document.createElement("span");
+                  var chip = document.createElement("span");
                   chip.className = "fc-source-chip";
                   chip.textContent = s;
                   srcEl.appendChild(chip);
@@ -391,7 +507,7 @@
           }
         }
 
-        // Wait for typewriter to finish before updating history
+        // Wait for typewriter to finish
         await new Promise(function(resolve) {
           (function wait() { isTyping || typeQueue.length ? setTimeout(wait, 50) : resolve(); })();
         });
