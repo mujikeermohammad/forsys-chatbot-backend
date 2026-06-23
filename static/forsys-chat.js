@@ -103,31 +103,50 @@
       font-size: 12.5px; color: var(--fc-muted); margin: 0;
       line-height: 1.5;
     }
+    .fc-form-box {
+      background: var(--fc-white); border: 1.5px solid var(--fc-border);
+      border-radius: 12px; padding: 14px 14px 12px; display: flex;
+      flex-direction: column; gap: 10px;
+    }
     .fc-field { display: flex; flex-direction: column; gap: 5px; }
     .fc-field label {
       font-size: 12px; font-weight: 600; color: var(--fc-dark);
       text-transform: uppercase; letter-spacing: .04em;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .fc-optional {
+      font-size: 10px; font-weight: 500; color: var(--fc-muted);
+      background: #f3f4f6; border-radius: 4px; padding: 1px 5px;
+      text-transform: none; letter-spacing: 0;
     }
     .fc-field input {
       padding: 9px 12px; border: 1.5px solid var(--fc-border);
       border-radius: 10px; font-size: 14px; font-family: var(--fc-font);
-      outline: none; background: var(--fc-white); color: var(--fc-dark);
+      outline: none; background: var(--fc-bg); color: var(--fc-dark);
       transition: border-color .15s;
     }
     .fc-field input:focus { border-color: var(--fc-purple); }
     #fc-prechat-submit {
-      width: 100%; padding: 11px; border-radius: 10px; border: none;
+      width: 100%; padding: 10px; border-radius: 10px; border: none;
       background: linear-gradient(135deg, var(--fc-purple), var(--fc-teal));
-      color: #fff; font-size: 14px; font-weight: 600;
+      color: #fff; font-size: 13.5px; font-weight: 600;
       cursor: pointer; font-family: var(--fc-font);
       transition: opacity .15s; margin-top: 2px;
     }
     #fc-prechat-submit:hover { opacity: .9; }
-    #fc-prechat-skip {
+    .fc-or {
       text-align: center; font-size: 12px; color: var(--fc-muted);
-      cursor: pointer; text-decoration: underline; text-underline-offset: 2px;
+      font-style: italic; position: relative;
     }
-    #fc-prechat-skip:hover { color: var(--fc-purple); }
+    #fc-prechat-skip {
+      width: 100%; padding: 10px; border-radius: 10px;
+      border: 1.5px solid var(--fc-border);
+      background: var(--fc-white); color: var(--fc-dark);
+      font-size: 13.5px; font-weight: 600;
+      cursor: pointer; font-family: var(--fc-font);
+      transition: border-color .15s, color .15s;
+    }
+    #fc-prechat-skip:hover { border-color: var(--fc-purple); color: var(--fc-purple); }
 
     /* ── Messages ── */
     #fc-messages {
@@ -251,17 +270,20 @@
           </div>
           <div id="fc-prechat-bubble">${GREETING}</div>
         </div>
-        <h3>Before we start &mdash; <em style="font-weight:400;color:var(--fc-muted)">optional</em></h3>
-        <p>Share your details so we can follow up. Or just start chatting.</p>
-        <div class="fc-field" id="fc-name-field">
-          <label for="fc-name-input">Your name</label>
-          <input id="fc-name-input" type="text" placeholder="Jane Smith" autocomplete="name">
+        <p style="font-size:12px;color:var(--fc-muted);margin:0">Share your details so we can follow up &mdash; or skip and chat anonymously.</p>
+        <div class="fc-form-box">
+          <div class="fc-field" id="fc-name-field">
+            <label for="fc-name-input">Your name <span class="fc-optional">Optional</span></label>
+            <input id="fc-name-input" type="text" placeholder="Jane Smith" autocomplete="name">
+          </div>
+          <div class="fc-field" id="fc-email-field">
+            <label for="fc-email-input">Work email <span class="fc-optional">Optional</span></label>
+            <input id="fc-email-input" type="email" placeholder="jane@company.com" autocomplete="email">
+          </div>
+          <button id="fc-prechat-submit">Start chatting &rarr;</button>
         </div>
-        <div class="fc-field" id="fc-email-field">
-          <label for="fc-email-input">Work email</label>
-          <input id="fc-email-input" type="email" placeholder="jane@company.com" autocomplete="email">
-        </div>
-        <button id="fc-prechat-submit">Start chatting &rarr;</button>
+        <div class="fc-or">or</div>
+        <button id="fc-prechat-skip">Skip &amp; Start Chatting</button>
       </div>
 
       <div id="fc-messages" aria-live="polite" style="display:none"></div>
