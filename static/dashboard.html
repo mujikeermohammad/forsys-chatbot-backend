@@ -88,11 +88,18 @@
   }
   .dropdown-logout:hover { background: #f7f8ff; color: var(--purple); }
 
+  /* ── Action bar (refresh, below header) ── */
+  .action-bar {
+    display: flex;
+    justify-content: flex-end;
+    padding: 10px 32px 0;
+  }
+
   /* ── Stats bar ── */
   .stats-bar {
     display: flex;
     gap: 16px;
-    padding: 20px 32px;
+    padding: 14px 32px 20px;
     flex-wrap: wrap;
   }
   .stat-card {
@@ -124,15 +131,15 @@
   .toolbar {
     display: flex;
     align-items: center;
+    justify-content: flex-end;
     gap: 10px;
     padding: 0 32px 16px;
     flex-wrap: wrap;
   }
   .search-wrap {
     position: relative;
-    flex: 1;
     min-width: 200px;
-    max-width: 360px;
+    max-width: 280px;
   }
   .search-wrap svg {
     position: absolute;
@@ -312,14 +319,22 @@
   .no-answer { color: #ccc; font-style: italic; }
   .no-messages { font-size: 13px; color: var(--muted); font-style: italic; }
 
-  /* ── Empty state ── */
-  .empty-state {
-    text-align: center;
-    padding: 60px 20px;
-    color: var(--muted);
+  /* ── Dummy / sample rows ── */
+  .dummy-notice {
+    padding: 8px 16px;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 8px;
+    font-size: 12.5px;
+    color: #92400e;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
-  .empty-state svg { margin-bottom: 16px; opacity: .3; }
-  .empty-state p { font-size: 15px; }
+  tr.dummy-row { opacity: .55; cursor: default !important; }
+  tr.dummy-row:hover { background: transparent !important; }
+  .btn-ghost { opacity: .3; pointer-events: none; }
 
   /* ── Modal ── */
   .modal-overlay {
@@ -435,6 +450,13 @@
   </div>
 </div>
 
+<div class="action-bar">
+  <button class="btn btn-primary" onclick="loadLeads()">
+    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="display:inline;margin-right:5px;vertical-align:-2px" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.48"/></svg>
+    Refresh
+  </button>
+</div>
+
 <div class="stats-bar" id="stats-bar">
   <div class="stat-card"><div class="stat-val" id="stat-total">—</div><div class="stat-label">Total Leads</div></div>
   <div class="stat-card"><div class="stat-val" id="stat-today">—</div><div class="stat-label">Today</div></div>
@@ -452,10 +474,6 @@
   <button class="btn btn-outline" onclick="exportCSV()">
     <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="display:inline;margin-right:5px;vertical-align:-2px" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
     Export CSV
-  </button>
-  <button class="btn btn-primary" onclick="loadLeads()">
-    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="display:inline;margin-right:5px;vertical-align:-2px" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.48"/></svg>
-    Refresh
   </button>
 </div>
 
@@ -486,6 +504,15 @@
 
 <script>
   const API   = window.location.origin;
+
+  const DUMMY_LEADS = [
+    { id: 'd1', name: 'Sarah Johnson',   email: 'sarah.j@techcorp.com',      first_seen: '2026-06-18T09:15:00Z', last_seen: '2026-06-20T14:42:00Z', message_count: 7,  _dummy: true },
+    { id: 'd2', name: 'Michael Chen',    email: 'm.chen@innovate.io',         first_seen: '2026-06-19T14:30:00Z', last_seen: '2026-06-21T10:05:00Z', message_count: 12, _dummy: true },
+    { id: 'd3', name: 'Emily Rodriguez', email: 'emily.r@globaltech.com',     first_seen: '2026-06-20T10:05:00Z', last_seen: '2026-06-22T16:28:00Z', message_count: 4,  _dummy: true },
+    { id: 'd4', name: 'David Park',      email: 'dpark@ventures.com',         first_seen: '2026-06-21T16:45:00Z', last_seen: '2026-06-23T08:20:00Z', message_count: 9,  _dummy: true },
+    { id: 'd5', name: 'Amanda Foster',   email: 'amanda.f@solutions.net',     first_seen: '2026-06-22T11:00:00Z', last_seen: '2026-06-23T11:35:00Z', message_count: 5,  _dummy: true },
+    { id: 'd6', name: 'James Whitfield', email: 'j.whitfield@meridian.com',   first_seen: '2026-06-23T08:00:00Z', last_seen: '2026-06-23T08:45:00Z', message_count: 3,  _dummy: true },
+  ];
 
   let allLeads       = [];
   let sortKey        = 'last_seen';
@@ -556,10 +583,13 @@
 
   // ── Render table ─────────────────────────────────────────────────────────────
   function renderTable() {
-    const q    = document.getElementById('search').value.toLowerCase().trim();
-    let leads  = allLeads.filter(l =>
+    const q   = document.getElementById('search').value.toLowerCase().trim();
+    let leads = allLeads.filter(l =>
       !q || l.name.toLowerCase().includes(q) || l.email.toLowerCase().includes(q)
     );
+
+    const showDummy = !q && allLeads.length === 0;
+    if (showDummy) leads = DUMMY_LEADS;
 
     leads = leads.sort((a, b) => {
       let av = a[sortKey] ?? '', bv = b[sortKey] ?? '';
@@ -570,14 +600,7 @@
     const wrap = document.getElementById('table-wrap');
 
     if (!leads.length) {
-      wrap.innerHTML = `
-        <div class="empty-state">
-          <svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-          </svg>
-          <p>${allLeads.length ? 'No results for your search.' : 'No leads yet. Leads appear after users chat with ForsysGPT.'}</p>
-        </div>`;
+      wrap.innerHTML = `<p style="padding:32px;color:var(--muted);font-size:14px">No results for your search.</p>`;
       return;
     }
 
@@ -589,19 +612,28 @@
       { key: 'message_count', label: 'Questions' },
     ];
 
+    const notice = showDummy
+      ? `<div class="dummy-notice">
+           <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+           Sample preview — your real leads will appear here once users start chatting.
+         </div>`
+      : '';
+
     let rows = '';
     leads.forEach(lead => {
-      const isExpanded = expandedId === lead.id;
+      const isExpanded = !lead._dummy && expandedId === lead.id;
+      const dummyCls   = lead._dummy ? ' dummy-row' : '';
+      const clickAttr  = lead._dummy ? '' : `onclick="toggleExpand('${lead.id}')"`;
       rows += `
-        <tr onclick="toggleExpand(${lead.id})" class="${isExpanded ? 'expanded' : ''}">
+        <tr ${clickAttr} class="${isExpanded ? 'expanded' : ''}${dummyCls}">
           <td class="td-name">${esc(lead.name)}</td>
           <td class="td-email">${esc(lead.email)}</td>
           <td class="td-date">${fmtDate(lead.first_seen)}</td>
           <td class="td-date">${fmtDate(lead.last_seen)}</td>
           <td><span class="td-count">${lead.message_count || 0}</span></td>
           <td class="td-actions" onclick="event.stopPropagation()">
-            <button class="btn btn-outline btn-sm" onclick="openEdit(${lead.id}, '${esc(lead.name)}', '${esc(lead.email)}')">Edit</button>
-            <button class="btn btn-danger btn-sm" onclick="deleteLead(${lead.id}, '${esc(lead.name)}')">Delete</button>
+            <button class="btn btn-outline btn-sm ${lead._dummy ? 'btn-ghost' : ''}" onclick="${lead._dummy ? '' : `openEdit('${lead.id}', '${esc(lead.name)}', '${esc(lead.email)}')`}">Edit</button>
+            <button class="btn btn-danger btn-sm ${lead._dummy ? 'btn-ghost' : ''}" onclick="${lead._dummy ? '' : `deleteLead('${lead.id}', '${esc(lead.name)}')`}">Delete</button>
           </td>
         </tr>
         ${isExpanded ? `<tr class="detail-row"><td colspan="6"><div class="detail-panel" id="detail-${lead.id}"><div class="spinner"></div></div></td></tr>` : ''}
@@ -615,6 +647,7 @@
     }).join('') + '<th>Actions</th>';
 
     wrap.innerHTML = `
+      ${notice}
       <table>
         <thead><tr>${thHtml}</tr></thead>
         <tbody>${rows}</tbody>
