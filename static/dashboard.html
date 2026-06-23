@@ -33,36 +33,60 @@
   .header {
     background: linear-gradient(135deg, var(--dark), #1a0a60);
     color: #fff;
-    padding: 18px 32px;
+    padding: 14px 32px;
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 14px;
     position: sticky;
     top: 0;
     z-index: 100;
     box-shadow: 0 2px 20px rgba(107,72,255,.25);
   }
   .header-logo {
-    width: 36px; height: 36px;
-    background: linear-gradient(135deg, var(--purple), var(--teal));
-    border-radius: 10px;
+    width: 38px; height: 38px;
     display: grid; place-items: center;
-    font-size: 18px; font-weight: 800; color: #fff;
     flex-shrink: 0;
   }
+  .header-logo img { width: 100%; height: 100%; object-fit: contain; }
   .header h1 { font-size: 18px; font-weight: 700; flex: 1; }
-  .header-sub { font-size: 13px; color: rgba(255,255,255,.55); }
-  #logout-btn {
-    background: rgba(255,255,255,.1);
-    border: 1px solid rgba(255,255,255,.2);
-    color: #fff;
-    padding: 7px 16px;
-    border-radius: 8px;
-    font-size: 13px;
-    cursor: pointer;
-    transition: background .15s;
+
+  /* ── User dropdown ── */
+  .header-user {
+    display: flex; align-items: center; gap: 10px;
+    cursor: pointer; position: relative; user-select: none;
   }
-  #logout-btn:hover { background: rgba(255,255,255,.18); }
+  .header-welcome { font-size: 13.5px; color: rgba(255,255,255,.88); font-weight: 500; }
+  .header-avatar {
+    width: 34px; height: 34px; border-radius: 50%;
+    overflow: hidden; flex-shrink: 0;
+    border: 2px solid rgba(255,255,255,.35);
+    background: linear-gradient(135deg, var(--purple), var(--teal));
+    display: grid; place-items: center;
+    font-size: 14px; font-weight: 700; color: #fff;
+  }
+  .header-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .header-chevron { color: rgba(255,255,255,.6); transition: transform .2s; flex-shrink: 0; }
+  .header-user.open .header-chevron { transform: rotate(180deg); }
+  .header-dropdown {
+    display: none; position: absolute;
+    top: calc(100% + 12px); right: 0;
+    background: #fff; border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0,0,0,.22);
+    min-width: 210px; overflow: hidden; z-index: 200;
+    border: 1px solid var(--border);
+  }
+  .header-user.open .header-dropdown { display: block; }
+  .dropdown-email {
+    padding: 13px 16px; font-size: 12.5px;
+    color: var(--muted); border-bottom: 1px solid var(--border);
+    word-break: break-all; line-height: 1.4;
+  }
+  .dropdown-logout {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 16px; font-size: 14px; color: var(--text);
+    font-weight: 500; text-decoration: none; transition: background .12s;
+  }
+  .dropdown-logout:hover { background: #f7f8ff; color: var(--purple); }
 
   /* ── Stats bar ── */
   .stats-bar {
@@ -387,12 +411,28 @@
 <body>
 
 <div class="header">
-  <div class="header-logo">F</div>
-  <div>
-    <h1>ForsysGPT Leads</h1>
-    <div class="header-sub">Signed in as __USER_EMAIL__</div>
+  <div class="header-logo">
+    <img src="https://www.forsysinc.com/blog/wp-content/uploads/2026/06/Forsys_cloud.png" alt="Forsys">
   </div>
-  <button id="logout-btn" onclick="logout()">Sign out</button>
+  <h1>ForsysGPT Dashboard</h1>
+  <div class="header-user" id="header-user">
+    <span class="header-welcome">Welcome, __USER_FIRST_NAME__</span>
+    <div class="header-avatar" id="header-avatar">
+      <img src="__USER_PICTURE__" alt="__USER_FIRST_NAME__"
+           onerror="this.style.display='none'" id="header-avatar-img">
+      <span id="header-avatar-initial">__USER_INITIAL__</span>
+    </div>
+    <svg class="header-chevron" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true">
+      <polyline points="6 9 12 15 18 9"/>
+    </svg>
+    <div class="header-dropdown" id="header-dropdown">
+      <div class="dropdown-email">__USER_EMAIL__</div>
+      <a href="/dashboard/logout" class="dropdown-logout">
+        <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        Sign out
+      </a>
+    </div>
+  </div>
 </div>
 
 <div class="stats-bar" id="stats-bar">
@@ -453,6 +493,26 @@
   let expandedId     = null;
   let editingId      = null;
   let messagesCache  = {};
+
+  // ── User dropdown ────────────────────────────────────────────────────────────
+  (function() {
+    const userEl = document.getElementById('header-user');
+    const img    = document.getElementById('header-avatar-img');
+    const initial = document.getElementById('header-avatar-initial');
+
+    // Hide initial text when profile picture loads
+    if (img && img.src && !img.src.endsWith('__USER_PICTURE__')) {
+      img.addEventListener('load', function() { if (initial) initial.style.display = 'none'; });
+    }
+
+    userEl.addEventListener('click', function(e) {
+      e.stopPropagation();
+      userEl.classList.toggle('open');
+    });
+    document.addEventListener('click', function() {
+      userEl.classList.remove('open');
+    });
+  })();
 
   // ── Logout ──────────────────────────────────────────────────────────────────
   function logout() {

@@ -57,13 +57,13 @@ MAX_HISTORY = 6
 
 # ── Session (HMAC-signed cookie) ──────────────────────────────────────────────
 
-def create_session_token(email: str) -> str:
-    data    = json.dumps({"email": email, "ts": int(time.time())})
+def create_session_token(email: str, name: str = "", picture: str = "") -> str:
+    data    = json.dumps({"email": email, "name": name, "picture": picture, "ts": int(time.time())})
     payload = base64.urlsafe_b64encode(data.encode()).decode()
     sig     = hmac.new(SESSION_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
     return f"{payload}.{sig}"
 
-def verify_session_token(token: str) -> str | None:
+def verify_session_token(token: str) -> dict | None:
     try:
         payload, sig = token.rsplit(".", 1)
         expected = hmac.new(SESSION_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
@@ -72,20 +72,20 @@ def verify_session_token(token: str) -> str | None:
         data = json.loads(base64.urlsafe_b64decode(payload.encode()))
         if time.time() - data["ts"] > SESSION_MAX_AGE:
             return None
-        return data["email"]
+        return data
     except Exception:
         return None
 
-def get_session_email(request: Request) -> str | None:
+def get_session_data(request: Request) -> dict | None:
     token = request.cookies.get("fc_session")
     return verify_session_token(token) if token else None
 
 def require_session(request: Request) -> str:
     """Raises 403 for API routes if session is invalid."""
-    email = get_session_email(request)
-    if not email:
+    data = get_session_data(request)
+    if not data or not data.get("email"):
         raise HTTPException(status_code=403, detail="Not authenticated.")
-    return email
+    return data["email"]
 
 
 # ── Database ──────────────────────────────────────────────────────────────────
@@ -340,7 +340,7 @@ async def chat(req: ChatRequest):
 
 @app.get("/dashboard/login", response_class=HTMLResponse)
 def dashboard_login(request: Request, error: str = ""):
-    if get_session_email(request):
+    if get_session_data(request):
         return RedirectResponse("/dashboard", status_code=302)
     html = Path(__file__).parent / "static" / "login.html"
     content = html.read_text(encoding="utf-8")
@@ -401,14 +401,16 @@ async def auth_callback(code: str = "", error: str = ""):
             )
             userinfo = user_res.json()
 
-        email = userinfo.get("email", "").lower()
+        email   = userinfo.get("email", "").lower()
+        name    = userinfo.get("name", "")
+        picture = userinfo.get("picture", "")
         if not email:
             return RedirectResponse("/dashboard/login?error=oauth_failed", status_code=302)
 
         if ALLOWED_EMAILS and email not in ALLOWED_EMAILS:
             return RedirectResponse("/dashboard/login?error=unauthorized", status_code=302)
 
-        token    = create_session_token(email)
+        token    = create_session_token(email, name, picture)
         response = RedirectResponse("/dashboard", status_code=302)
         response.set_cookie(
             "fc_session", token,
@@ -435,11 +437,21 @@ def dashboard_logout():
 
 @app.get("/dashboard", response_class=HTMLResponse)
 def dashboard(request: Request):
-    email = get_session_email(request)
-    if not email:
+    session = get_session_data(request)
+    if not session:
         return RedirectResponse("/dashboard/login", status_code=302)
+    email      = session.get("email", "")
+    name       = session.get("name", "") or email.split("@")[0]
+    picture    = session.get("picture", "")
+    first_name = name.split()[0] if name else email.split("@")[0]
+    initial    = first_name[0].upper() if first_name else "U"
     html    = Path(__file__).parent / "static" / "dashboard.html"
-    content = html.read_text(encoding="utf-8").replace("__USER_EMAIL__", email)
+    content = (html.read_text(encoding="utf-8")
+        .replace("__USER_EMAIL__", email)
+        .replace("__USER_FIRST_NAME__", first_name)
+        .replace("__USER_PICTURE__", picture)
+        .replace("__USER_INITIAL__", initial)
+    )
     return HTMLResponse(content=content)
 
 
