@@ -390,7 +390,7 @@
   <div class="header-logo">F</div>
   <div>
     <h1>ForsysGPT Leads</h1>
-    <div class="header-sub">Chat lead capture dashboard</div>
+    <div class="header-sub">Signed in as __USER_EMAIL__</div>
   </div>
   <button id="logout-btn" onclick="logout()">Sign out</button>
 </div>
@@ -445,7 +445,6 @@
 <div id="toast"></div>
 
 <script>
-  const TOKEN = '__TOKEN__';
   const API   = window.location.origin;
 
   let allLeads       = [];
@@ -457,7 +456,7 @@
 
   // ── Logout ──────────────────────────────────────────────────────────────────
   function logout() {
-    window.location.href = '/dashboard?token=';
+    window.location.href = '/dashboard/logout';
   }
 
   // ── Toast ────────────────────────────────────────────────────────────────────
@@ -472,7 +471,7 @@
   async function loadLeads() {
     document.getElementById('table-wrap').innerHTML = '<div class="spinner"></div>';
     try {
-      const res = await fetch(`${API}/api/leads?token=${TOKEN}`);
+      const res = await fetch(`${API}/api/leads`);
       if (!res.ok) throw new Error('Auth failed — check your token.');
       allLeads = await res.json();
       messagesCache = {};
@@ -580,7 +579,7 @@
     if (messagesCache[id]) { renderMessages(id, messagesCache[id]); return; }
 
     try {
-      const res = await fetch(`${API}/api/leads/${id}/messages?token=${TOKEN}`);
+      const res = await fetch(`${API}/api/leads/${id}/messages`);
       messagesCache[id] = await res.json();
       renderMessages(id, messagesCache[id]);
     } catch {
@@ -627,7 +626,7 @@
     const email = document.getElementById('edit-email').value.trim();
     if (!name || !email) { toast('Name and email are required.'); return; }
     try {
-      const res = await fetch(`${API}/api/leads/${editingId}?token=${TOKEN}`, {
+      const res = await fetch(`${API}/api/leads/${editingId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email }),
@@ -645,7 +644,7 @@
   async function deleteLead(id, name) {
     if (!confirm(`Delete lead "${name}" and all their messages? This cannot be undone.`)) return;
     try {
-      const res = await fetch(`${API}/api/leads/${id}?token=${TOKEN}`, { method: 'DELETE' });
+      const res = await fetch(`${API}/api/leads/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error();
       allLeads = allLeads.filter(l => l.id !== id);
       if (expandedId === id) expandedId = null;

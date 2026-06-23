@@ -1,40 +1,92 @@
 """
-Forsys RAG — FastAPI Backend (BM25 + Lead Capture edition)
+Forsys RAG — FastAPI Backend (BM25 + Lead Capture + Google Auth edition)
 Endpoints:
-  GET  /health                     — liveness check
-  GET  /widget.js                  — serve widget script
-  POST /chat                       — RAG-powered chat (accepts name + email)
-  GET  /dashboard                  — lead dashboard UI
-  GET  /api/leads                  — list all leads (JSON)
-  GET  /api/leads/{id}/messages    — messages for a lead
-  PUT  /api/leads/{id}             — update lead name/email
-  DELETE /api/leads/{id}           — delete lead + messages
+  GET  /health                         — liveness check
+  GET  /widget.js                      — serve widget script
+  POST /chat                           — RAG-powered chat (accepts name + email)
+  GET  /dashboard                      — lead dashboard UI  (session required)
+  GET  /dashboard/login                — Google sign-in page
+  GET  /dashboard/auth/google          — start Google OAuth flow
+  GET  /dashboard/auth/callback        — Google OAuth callback
+  GET  /dashboard/logout               — clear session, redirect to login
+  GET  /api/leads                      — list all leads       (session required)
+  GET  /api/leads/{id}/messages        — messages for a lead  (session required)
+  PUT  /api/leads/{id}                 — update lead          (session required)
+  DELETE /api/leads/{id}               — delete lead          (session required)
 """
 
 import os
 import json
+import hmac
+import hashlib
+import base64
+import time
 import sqlite3
 import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlencode
 
 import anthropic
 import httpx
 from rank_bm25 import BM25Okapi
-from fastapi import FastAPI, HTTPException, Request, Depends
-from fastapi.responses import StreamingResponse, Response, HTMLResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import StreamingResponse, Response, HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
 load_dotenv()
 
-ANTHROPIC_API_KEY  = os.getenv("ANTHROPIC_API_KEY", "")
-DASHBOARD_TOKEN    = os.getenv("DASHBOARD_TOKEN", "forsys-admin")
-DB_PATH            = os.getenv("DB_PATH", str(Path(__file__).parent / "leads.db"))
-ALLOWED_ORIGINS    = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",") if o.strip()] or ["*"]
-TOP_K              = 5
-MAX_HISTORY        = 6
+# ── Config ────────────────────────────────────────────────────────────────────
+
+ANTHROPIC_API_KEY    = os.getenv("ANTHROPIC_API_KEY", "")
+ALLOWED_ORIGINS      = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",") if o.strip()] or ["*"]
+DB_PATH              = os.getenv("DB_PATH", str(Path(__file__).parent / "leads.db"))
+
+GOOGLE_CLIENT_ID     = os.getenv("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
+ALLOWED_EMAILS       = [e.strip().lower() for e in os.getenv("ALLOWED_EMAILS", "").split(",") if e.strip()]
+SESSION_SECRET       = os.getenv("SESSION_SECRET", "change-me-in-production")
+SESSION_MAX_AGE      = 7 * 86400  # 7 days
+BASE_URL             = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:8080")
+
+TOP_K       = 5
+MAX_HISTORY = 6
+
+
+# ── Session (HMAC-signed cookie) ──────────────────────────────────────────────
+
+def create_session_token(email: str) -> str:
+    data    = json.dumps({"email": email, "ts": int(time.time())})
+    payload = base64.urlsafe_b64encode(data.encode()).decode()
+    sig     = hmac.new(SESSION_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    return f"{payload}.{sig}"
+
+def verify_session_token(token: str) -> str | None:
+    try:
+        payload, sig = token.rsplit(".", 1)
+        expected = hmac.new(SESSION_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig, expected):
+            return None
+        data = json.loads(base64.urlsafe_b64decode(payload.encode()))
+        if time.time() - data["ts"] > SESSION_MAX_AGE:
+            return None
+        return data["email"]
+    except Exception:
+        return None
+
+def get_session_email(request: Request) -> str | None:
+    token = request.cookies.get("fc_session")
+    return verify_session_token(token) if token else None
+
+def require_session(request: Request) -> str:
+    """Raises 403 for API routes if session is invalid."""
+    email = get_session_email(request)
+    if not email:
+        raise HTTPException(status_code=403, detail="Not authenticated.")
+    return email
+
 
 # ── Database ──────────────────────────────────────────────────────────────────
 
@@ -67,7 +119,7 @@ def init_db():
     conn.close()
 
 def upsert_lead(name: str, email: str) -> int:
-    now = datetime.now(timezone.utc).isoformat()
+    now  = datetime.now(timezone.utc).isoformat()
     conn = get_db()
     try:
         row = conn.execute("SELECT id FROM leads WHERE email = ?", (email,)).fetchone()
@@ -75,7 +127,7 @@ def upsert_lead(name: str, email: str) -> int:
             conn.execute("UPDATE leads SET last_seen = ?, name = ? WHERE id = ?", (now, name, row["id"]))
             lead_id = row["id"]
         else:
-            cur = conn.execute(
+            cur     = conn.execute(
                 "INSERT INTO leads (name, email, first_seen, last_seen) VALUES (?, ?, ?, ?)",
                 (name, email, now, now),
             )
@@ -86,7 +138,7 @@ def upsert_lead(name: str, email: str) -> int:
         conn.close()
 
 def save_message(lead_id: int, question: str, answer: str):
-    now = datetime.now(timezone.utc).isoformat()
+    now  = datetime.now(timezone.utc).isoformat()
     conn = get_db()
     try:
         conn.execute(
@@ -130,8 +182,8 @@ CONTEXT:
 
 # ── Globals ───────────────────────────────────────────────────────────────────
 
-docs: list[dict] = []
-bm25: BM25Okapi = None
+docs: list[dict]          = []
+bm25: BM25Okapi           = None
 anthropic_async_client: anthropic.AsyncAnthropic = None
 
 
@@ -147,7 +199,7 @@ async def lifespan(app: FastAPI):
 
     print("[2] Loading documents...", flush=True)
     docs_path = Path(__file__).parent / "docs.json"
-    docs = json.loads(docs_path.read_text(encoding="utf-8"))
+    docs      = json.loads(docs_path.read_text(encoding="utf-8"))
 
     print("[3] Building BM25 index...", flush=True)
     bm25 = BM25Okapi([d["text"].lower().split() for d in docs])
@@ -181,29 +233,22 @@ app = FastAPI(title="Forsys RAG API", lifespan=lifespan)
 @app.middleware("http")
 async def cors_middleware(request: Request, call_next):
     if request.method == "OPTIONS":
-        origin = request.headers.get("origin", "*")
+        origin  = request.headers.get("origin", "*")
         allowed = origin if ("*" in ALLOWED_ORIGINS or origin in ALLOWED_ORIGINS) else ""
         return Response(
             status_code=200,
             headers={
-                "Access-Control-Allow-Origin": allowed,
+                "Access-Control-Allow-Origin":  allowed,
                 "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
                 "Access-Control-Allow-Headers": "Content-Type, Authorization",
-                "Access-Control-Max-Age": "86400",
+                "Access-Control-Max-Age":       "86400",
             },
         )
     response = await call_next(request)
-    origin = request.headers.get("origin", "")
+    origin   = request.headers.get("origin", "")
     if "*" in ALLOWED_ORIGINS or origin in ALLOWED_ORIGINS:
         response.headers["Access-Control-Allow-Origin"] = origin or "*"
     return response
-
-
-# ── Auth helper ───────────────────────────────────────────────────────────────
-
-def check_token(token: str = ""):
-    if token != DASHBOARD_TOKEN:
-        raise HTTPException(status_code=403, detail="Invalid token.")
 
 
 # ── Models ────────────────────────────────────────────────────────────────────
@@ -215,15 +260,15 @@ class Message(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     history: list[Message] = []
-    name: str = ""
-    email: str = ""
+    name:    str = ""
+    email:   str = ""
 
 class LeadUpdate(BaseModel):
-    name: str
+    name:  str
     email: str
 
 
-# ── Routes ───────────────────────────────────────────────────────────────────
+# ── Public routes ─────────────────────────────────────────────────────────────
 
 @app.get("/widget.js")
 def widget_js():
@@ -241,15 +286,13 @@ async def chat(req: ChatRequest):
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty.")
 
-    # BM25 retrieval
-    tokens = req.message.lower().split()
-    scores = bm25.get_scores(tokens)
+    tokens      = req.message.lower().split()
+    scores      = bm25.get_scores(tokens)
     top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:TOP_K]
-    top_docs = [docs[i] for i in top_indices]
-    sources = list({d["source"] for d in top_docs if d["source"]})
-    context = "\n\n---\n\n".join(d["text"] for d in top_docs) or "No relevant content found."
+    top_docs    = [docs[i] for i in top_indices]
+    sources     = list({d["source"] for d in top_docs if d["source"]})
+    context     = "\n\n---\n\n".join(d["text"] for d in top_docs) or "No relevant content found."
 
-    # Upsert lead if name/email provided
     lead_id = None
     if req.email.strip() and req.name.strip():
         try:
@@ -293,19 +336,118 @@ async def chat(req: ChatRequest):
     )
 
 
-# ── Dashboard ─────────────────────────────────────────────────────────────────
+# ── Auth routes ───────────────────────────────────────────────────────────────
 
-@app.get("/dashboard", response_class=HTMLResponse)
-def dashboard(token: str = ""):
-    check_token(token)
-    html = Path(__file__).parent / "static" / "dashboard.html"
-    content = html.read_text(encoding="utf-8").replace("__TOKEN__", token)
+@app.get("/dashboard/login", response_class=HTMLResponse)
+def dashboard_login(request: Request, error: str = ""):
+    if get_session_email(request):
+        return RedirectResponse("/dashboard", status_code=302)
+    html = Path(__file__).parent / "static" / "login.html"
+    content = html.read_text(encoding="utf-8")
+    error_html = ""
+    if error == "unauthorized":
+        error_html = '<div class="error">Your Google account is not authorized to access this dashboard.</div>'
+    elif error == "cancelled":
+        error_html = '<div class="error">Sign-in was cancelled. Please try again.</div>'
+    elif error == "oauth_failed":
+        error_html = '<div class="error">Google sign-in failed. Please try again.</div>'
+    elif error == "not_configured":
+        error_html = '<div class="error">Google OAuth is not configured on this server.</div>'
+    content = content.replace("<!-- ERROR_PLACEHOLDER -->", error_html)
     return HTMLResponse(content=content)
 
 
+@app.get("/dashboard/auth/google")
+def auth_google():
+    if not GOOGLE_CLIENT_ID:
+        return RedirectResponse("/dashboard/login?error=not_configured", status_code=302)
+    params = urlencode({
+        "client_id":     GOOGLE_CLIENT_ID,
+        "redirect_uri":  f"{BASE_URL}/dashboard/auth/callback",
+        "response_type": "code",
+        "scope":         "openid email profile",
+        "access_type":   "online",
+        "prompt":        "select_account",
+    })
+    return RedirectResponse(f"https://accounts.google.com/o/oauth2/v2/auth?{params}", status_code=302)
+
+
+@app.get("/dashboard/auth/callback")
+async def auth_callback(code: str = "", error: str = ""):
+    if error or not code:
+        return RedirectResponse("/dashboard/login?error=cancelled", status_code=302)
+    try:
+        async with httpx.AsyncClient() as client:
+            token_res = await client.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "code":          code,
+                    "client_id":     GOOGLE_CLIENT_ID,
+                    "client_secret": GOOGLE_CLIENT_SECRET,
+                    "redirect_uri":  f"{BASE_URL}/dashboard/auth/callback",
+                    "grant_type":    "authorization_code",
+                },
+                timeout=10,
+            )
+            token_data   = token_res.json()
+            access_token = token_data.get("access_token")
+            if not access_token:
+                raise ValueError("No access token returned.")
+
+            user_res = await client.get(
+                "https://www.googleapis.com/oauth2/v2/userinfo",
+                headers={"Authorization": f"Bearer {access_token}"},
+                timeout=10,
+            )
+            userinfo = user_res.json()
+
+        email = userinfo.get("email", "").lower()
+        if not email:
+            return RedirectResponse("/dashboard/login?error=oauth_failed", status_code=302)
+
+        if ALLOWED_EMAILS and email not in ALLOWED_EMAILS:
+            return RedirectResponse("/dashboard/login?error=unauthorized", status_code=302)
+
+        token    = create_session_token(email)
+        response = RedirectResponse("/dashboard", status_code=302)
+        response.set_cookie(
+            "fc_session", token,
+            max_age=SESSION_MAX_AGE,
+            httponly=True,
+            samesite="lax",
+            secure=BASE_URL.startswith("https"),
+        )
+        return response
+
+    except Exception as e:
+        print(f"[AUTH] callback error: {e}", flush=True)
+        return RedirectResponse("/dashboard/login?error=oauth_failed", status_code=302)
+
+
+@app.get("/dashboard/logout")
+def dashboard_logout():
+    response = RedirectResponse("/dashboard/login", status_code=302)
+    response.delete_cookie("fc_session")
+    return response
+
+
+# ── Dashboard (session-protected) ─────────────────────────────────────────────
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard(request: Request):
+    email = get_session_email(request)
+    if not email:
+        return RedirectResponse("/dashboard/login", status_code=302)
+    html    = Path(__file__).parent / "static" / "dashboard.html"
+    content = html.read_text(encoding="utf-8").replace("__USER_EMAIL__", email)
+    return HTMLResponse(content=content)
+
+
+# ── Lead API (session-protected) ──────────────────────────────────────────────
+
 @app.get("/api/leads")
-def api_leads(token: str = ""):
-    check_token(token)
+def api_leads(request: Request):
+    require_session(request)
     conn = get_db()
     try:
         rows = conn.execute("""
@@ -322,8 +464,8 @@ def api_leads(token: str = ""):
 
 
 @app.get("/api/leads/{lead_id}/messages")
-def api_lead_messages(lead_id: int, token: str = ""):
-    check_token(token)
+def api_lead_messages(lead_id: int, request: Request):
+    require_session(request)
     conn = get_db()
     try:
         rows = conn.execute(
@@ -336,8 +478,8 @@ def api_lead_messages(lead_id: int, token: str = ""):
 
 
 @app.put("/api/leads/{lead_id}")
-def api_update_lead(lead_id: int, body: LeadUpdate, token: str = ""):
-    check_token(token)
+def api_update_lead(lead_id: int, body: LeadUpdate, request: Request):
+    require_session(request)
     conn = get_db()
     try:
         conn.execute("UPDATE leads SET name = ?, email = ? WHERE id = ?", (body.name, body.email, lead_id))
@@ -348,8 +490,8 @@ def api_update_lead(lead_id: int, body: LeadUpdate, token: str = ""):
 
 
 @app.delete("/api/leads/{lead_id}")
-def api_delete_lead(lead_id: int, token: str = ""):
-    check_token(token)
+def api_delete_lead(lead_id: int, request: Request):
+    require_session(request)
     conn = get_db()
     try:
         conn.execute("DELETE FROM messages WHERE lead_id = ?", (lead_id,))
