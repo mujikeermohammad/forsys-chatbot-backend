@@ -353,7 +353,7 @@
 
     const tooltip = document.createElement("div");
     tooltip.id = "fc-tooltip";
-    tooltip.textContent = "Want to know more about Forsys? I’m here";
+    tooltip.textContent = "Ask me about Forsys!";
     document.body.appendChild(fab);
     document.body.appendChild(panel);
     document.body.appendChild(tooltip);
