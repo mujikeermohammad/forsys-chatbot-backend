@@ -37,6 +37,17 @@
       border: none; cursor: pointer; box-shadow: var(--fc-shadow);
       display: flex; align-items: center; justify-content: center;
       transition: transform .2s, box-shadow .2s;
+      opacity: 0; transform: scale(0); pointer-events: none;
+    }
+    #fc-fab.fc-fab-visible {
+      opacity: 1; transform: scale(1); pointer-events: all;
+      animation: fc-fab-pop .55s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+    @keyframes fc-fab-pop {
+      0%   { opacity: 0; transform: scale(0) rotate(-8deg); }
+      65%  { opacity: 1; transform: scale(1.16) rotate(2deg); }
+      82%  { transform: scale(0.93) rotate(-1deg); }
+      100% { opacity: 1; transform: scale(1) rotate(0deg); }
     }
     #fc-fab:hover { transform: scale(1.08); box-shadow: 0 12px 40px rgba(107,72,255,0.28); }
     #fc-fab svg { width: 26px; height: 26px; fill: #fff; }
@@ -241,8 +252,31 @@
     .fc-bubble hr { border: none; border-top: 1px solid var(--fc-border); margin: 8px 0; }
     .fc-bubble a { color: var(--fc-purple); text-decoration: none; }
 
+    /* ── Tooltip ── */
+    #fc-tooltip {
+      position: fixed; bottom: 92px; right: 24px; z-index: 9997;
+      background: #fff; color: var(--fc-dark);
+      font-family: var(--fc-font); font-size: 13px; font-weight: 500;
+      padding: 11px 15px; border-radius: 12px; max-width: 230px;
+      box-shadow: 0 4px 20px rgba(0,0,0,.13), 0 0 0 1px rgba(0,0,0,.04);
+      line-height: 1.45; pointer-events: none;
+      opacity: 0; transform: translateY(10px) scale(.96);
+      transition: opacity .3s ease, transform .3s ease;
+      white-space: nowrap;
+    }
+    #fc-tooltip::before {
+      content: ''; position: absolute;
+      bottom: -6px; right: 22px;
+      width: 12px; height: 12px;
+      background: #fff; transform: rotate(45deg);
+      box-shadow: 2px 2px 5px rgba(0,0,0,.07);
+    }
+    #fc-tooltip.fc-tip-visible { opacity: 1; transform: translateY(0) scale(1); }
+    #fc-tooltip.fc-tip-out     { opacity: 0; transform: translateY(4px) scale(.97); }
+
     @media (prefers-reduced-motion: reduce) {
-      #fc-panel, #fc-fab, .fc-msg { transition: none !important; animation: none !important; }
+      #fc-panel, #fc-fab, .fc-msg, #fc-tooltip { transition: none !important; animation: none !important; }
+      #fc-fab.fc-fab-visible { opacity: 1 !important; transform: scale(1) !important; }
     }
   `;
 
@@ -318,9 +352,13 @@
       </div>
       <div id="fc-powered">ForsysGPT &mdash; Ask about services, solutions &amp; more</div>`;
 
+    const tooltip = document.createElement("div");
+    tooltip.id = "fc-tooltip";
+    tooltip.textContent = "Want to know more about Forsys? I’m here";
     document.body.appendChild(fab);
     document.body.appendChild(panel);
-    return { fab, panel };
+    document.body.appendChild(tooltip);
+    return { fab, panel, tooltip };
   }
 
   function renderMarkdown(text) {
@@ -449,9 +487,10 @@
 
   function init() {
     injectStyles();
-    var _r = buildWidget();
-    var fab   = _r.fab;
-    var panel = _r.panel;
+    var _r       = buildWidget();
+    var fab      = _r.fab;
+    var panel    = _r.panel;
+    var tooltipEl = _r.tooltip;
 
     var prechatEl = panel.querySelector("#fc-prechat");
     var messagesEl = panel.querySelector("#fc-messages");
@@ -522,6 +561,7 @@
     });
 
     function toggle() {
+      hideTooltip();
       isOpen = !isOpen;
       fab.classList.toggle("is-open", isOpen);
       panel.classList.toggle("is-open", isOpen);
@@ -595,6 +635,26 @@
       }
     });
     sendBtn.addEventListener("click", send);
+
+    // ── Delayed FAB reveal + tooltip ─────────────────────────────────────────
+    function hideTooltip() {
+      if (!tooltipEl.classList.contains('fc-tip-visible')) return;
+      tooltipEl.classList.remove('fc-tip-visible');
+      tooltipEl.classList.add('fc-tip-out');
+      setTimeout(function() { tooltipEl.style.display = 'none'; }, 320);
+    }
+
+    setTimeout(function() {
+      fab.classList.add('fc-fab-visible');
+      // Clear animation fill after pop completes so :hover transition works normally
+      setTimeout(function() { fab.style.animation = 'none'; }, 620);
+      // Tooltip appears 350ms after FAB starts animating
+      setTimeout(function() {
+        tooltipEl.classList.add('fc-tip-visible');
+        // Auto-dismiss tooltip after 5 seconds
+        setTimeout(hideTooltip, 5000);
+      }, 350);
+    }, 3000);
 
     async function send() {
       var text = inputEl.value.trim();
