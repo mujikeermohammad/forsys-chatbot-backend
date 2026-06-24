@@ -126,6 +126,11 @@
       transition: border-color .15s;
     }
     .fc-field input:focus { border-color: var(--fc-purple); }
+    .fc-field input.fc-input-err { border-color: #ef4444; }
+    .fc-err-msg {
+      font-size: 11.5px; color: #ef4444; display: none; line-height: 1.4;
+    }
+    .fc-err-msg.visible { display: block; }
     #fc-prechat-submit {
       width: 100%; padding: 10px; border-radius: 10px; border: none;
       background: linear-gradient(135deg, var(--fc-purple), var(--fc-teal));
@@ -279,6 +284,7 @@
           <div class="fc-field" id="fc-email-field">
             <label for="fc-email-input">Work email <span class="fc-optional">Optional</span></label>
             <input id="fc-email-input" type="email" placeholder="jane@company.com" autocomplete="email">
+            <span class="fc-err-msg" id="fc-email-err"></span>
           </div>
           <button id="fc-prechat-submit">Start chatting &rarr;</button>
         </div>
@@ -363,8 +369,30 @@
     return wrap;
   }
 
+  var BLOCKED_DOMAINS = [
+    "gmail.com","googlemail.com","yahoo.com","yahoo.co.uk","yahoo.co.in","yahoo.fr",
+    "yahoo.de","yahoo.es","yahoo.it","yahoo.com.au","yahoo.com.br","yahoo.ca",
+    "hotmail.com","hotmail.co.uk","hotmail.fr","hotmail.de","hotmail.es","hotmail.it",
+    "outlook.com","outlook.co.uk","outlook.fr","outlook.de","outlook.es","outlook.it",
+    "live.com","live.co.uk","live.fr","live.de","live.es","live.it",
+    "msn.com","aol.com","icloud.com","me.com","mac.com","protonmail.com","proton.me",
+    "pm.me","tutanota.com","tutamail.com","mail.com","gmx.com","gmx.net","gmx.de",
+    "ymail.com","inbox.com","fastmail.com","fastmail.fm","hushmail.com","zohomail.com",
+    "comcast.net","verizon.net","att.net","sbcglobal.net","bellsouth.net","cox.net",
+    "earthlink.net","roadrunner.com","charter.net","optonline.net","windstream.net",
+    "yandex.com","yandex.ru","mail.ru","qq.com","163.com","126.com","sina.com",
+    "rediffmail.com","in.com","sify.com","indiatimes.com","rediff.com","lycos.com",
+    "rocketmail.com","aim.com","excite.com","juno.com","netzero.net","mailfence.com"
+  ];
+
   function isValidEmail(email) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  }
+
+  function isWorkEmail(email) {
+    var domain = email.split("@")[1];
+    if (!domain) return false;
+    return BLOCKED_DOMAINS.indexOf(domain.toLowerCase()) === -1;
   }
 
   function init() {
@@ -381,6 +409,7 @@
 
     var nameInput   = panel.querySelector("#fc-name-input");
     var emailInput  = panel.querySelector("#fc-email-input");
+    var emailErr    = panel.querySelector("#fc-email-err");
     var submitBtn   = panel.querySelector("#fc-prechat-submit");
     var skipBtn     = panel.querySelector("#fc-prechat-skip");
 
@@ -411,13 +440,36 @@
     // Skip button
     skipBtn.addEventListener("click", function() { showChat(); });
 
-    // Pre-chat form submit (fields are optional)
+    function clearEmailErr() {
+      emailInput.classList.remove("fc-input-err");
+      emailErr.textContent = "";
+      emailErr.classList.remove("visible");
+    }
+    emailInput.addEventListener("input", clearEmailErr);
+
+    // Pre-chat form submit (email validated if provided)
     submitBtn.addEventListener("click", function() {
       var n = nameInput.value.trim();
       var e = emailInput.value.trim();
-      if (n && e && isValidEmail(e)) {
-        leadName  = n;
+      clearEmailErr();
+
+      if (e) {
+        if (!isValidEmail(e)) {
+          emailInput.classList.add("fc-input-err");
+          emailErr.textContent = "Please enter a valid email address.";
+          emailErr.classList.add("visible");
+          emailInput.focus();
+          return;
+        }
+        if (!isWorkEmail(e)) {
+          emailInput.classList.add("fc-input-err");
+          emailErr.textContent = "Please use your work email address.";
+          emailErr.classList.add("visible");
+          emailInput.focus();
+          return;
+        }
         leadEmail = e;
+        leadName  = n;
       }
       showChat();
     });
