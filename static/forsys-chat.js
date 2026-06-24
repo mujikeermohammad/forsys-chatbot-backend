@@ -72,14 +72,16 @@
       animation: fc-pulse 2s infinite;
     }
     #fc-new-chat {
-      background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.25);
-      border-radius: 8px; width: 28px; height: 28px;
-      display: flex; align-items: center; justify-content: center;
-      cursor: pointer; flex-shrink: 0; padding: 0;
+      margin-left: auto;
+      background: rgba(255,255,255,.12); border: 1.5px solid rgba(255,255,255,.32);
+      border-radius: 100px; padding: 5px 12px 5px 8px;
+      display: flex; align-items: center; gap: 5px;
+      cursor: pointer; flex-shrink: 0;
       transition: background .15s;
+      font-family: var(--fc-font); font-size: 12px; font-weight: 600; color: #fff;
     }
-    #fc-new-chat:hover { background: rgba(255,255,255,.28); }
-    #fc-new-chat svg { width: 13px; height: 13px; stroke: #fff; }
+    #fc-new-chat:hover { background: rgba(255,255,255,.24); }
+    #fc-new-chat svg { width: 13px; height: 13px; stroke: #fff; flex-shrink: 0; }
     @keyframes fc-pulse {
       0%,100% { box-shadow: 0 0 0 2px rgba(74,222,128,.3); }
       50%      { box-shadow: 0 0 0 5px rgba(74,222,128,.1); }
@@ -276,10 +278,10 @@
         </div>
         <div id="fc-dot" title="Online"></div>
         <button id="fc-new-chat" title="New conversation" aria-label="Start new conversation">
-          <svg fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          <svg fill="none" stroke-width="2.5" stroke-linecap="round" viewBox="0 0 24 24" aria-hidden="true">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
           </svg>
+          <span>New Chat</span>
         </button>
       </div>
 
@@ -351,7 +353,8 @@
       img.alt = "ForsysGPT";
       avatar.appendChild(img);
     } else {
-      avatar.textContent = "U";
+      avatar.innerHTML = '<svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" style="width:15px;height:15px" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
+      avatar.style.color = "#fff";
     }
 
     const inner  = document.createElement("div");
@@ -523,8 +526,12 @@
       fab.classList.toggle("is-open", isOpen);
       panel.classList.toggle("is-open", isOpen);
       if (isOpen) {
-        if (messagesEl.style.display !== "none") inputEl.focus();
-        else nameInput.focus();
+        if (messagesEl.style.display !== "none") {
+          setTimeout(function() { messagesEl.scrollTop = messagesEl.scrollHeight; }, 60);
+          inputEl.focus();
+        } else {
+          nameInput.focus();
+        }
       }
     }
 

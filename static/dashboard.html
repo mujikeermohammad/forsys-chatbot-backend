@@ -274,11 +274,15 @@
     padding: 12px 14px;
     font-size: 13.5px;
     font-weight: 600;
-    border-bottom: 1px solid var(--border);
     display: flex;
     gap: 8px;
-    align-items: flex-start;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+    transition: background .12s;
   }
+  .conv-q:hover { background: #f7f8ff; }
+  .conv-item.open .conv-q { border-bottom: 1px solid var(--border); }
   .conv-q::before {
     content: 'Q';
     width: 20px; height: 20px;
@@ -293,15 +297,18 @@
     margin-top: 1px;
   }
   .conv-a {
+    display: none;
     padding: 12px 14px;
     font-size: 13px;
     color: var(--muted);
     white-space: pre-wrap;
     line-height: 1.6;
-    display: flex;
     gap: 8px;
     align-items: flex-start;
   }
+  .conv-item.open .conv-a { display: flex; }
+  .conv-chevron { flex-shrink: 0; transition: transform .2s; margin-left: auto; }
+  .conv-item.open .conv-chevron { transform: rotate(180deg); }
   .conv-a::before {
     content: 'A';
     width: 20px; height: 20px;
@@ -687,12 +694,24 @@
       panel.innerHTML = '<h3>Conversation history</h3><p class="no-messages">No questions recorded yet.</p>';
       return;
     }
-    const items = msgs.map(m => `
-      <div class="conv-item">
-        <div class="conv-q">${esc(m.question)}<span class="conv-time">${fmtDate(m.created_at)}</span></div>
+    const items = msgs.map((m, idx) => {
+      const ciId = `ci-${id}-${idx}`;
+      return `
+      <div class="conv-item" id="${ciId}">
+        <div class="conv-q" onclick="toggleConv('${ciId}')">
+          <span style="flex:1">${esc(m.question)}</span>
+          <span class="conv-time">${fmtDate(m.created_at)}</span>
+          <svg class="conv-chevron" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
         <div class="conv-a">${m.answer ? esc(m.answer).substring(0, 800) + (m.answer.length > 800 ? '…' : '') : '<span class="no-answer">No response recorded</span>'}</div>
-      </div>`).join('');
+      </div>`;
+    }).join('');
     panel.innerHTML = `<h3>Conversation history (${msgs.length} question${msgs.length !== 1 ? 's' : ''})</h3>${items}`;
+  }
+
+  function toggleConv(id) {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('open');
   }
 
   // ── Sort ──────────────────────────────────────────────────────────────────────
