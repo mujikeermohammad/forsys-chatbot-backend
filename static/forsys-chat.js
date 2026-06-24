@@ -385,6 +385,17 @@
     "rocketmail.com","aim.com","excite.com","juno.com","netzero.net","mailfence.com"
   ];
 
+  function getAnonId() {
+    var key = 'fc_guest_id';
+    var id;
+    try { id = localStorage.getItem(key); } catch(e) {}
+    if (!id) {
+      id = 'guest_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      try { localStorage.setItem(key, id); } catch(e) {}
+    }
+    return id;
+  }
+
   function isValidEmail(email) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   }
@@ -420,6 +431,10 @@
     var history     = [];
 
     function showChat() {
+      if (!leadEmail) {
+        leadName  = "Unknown User";
+        leadEmail = getAnonId() + "@forsysgpt";
+      }
       prechatEl.style.display = "none";
       messagesEl.style.display = "flex";
       footerEl.style.display   = "flex";
