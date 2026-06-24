@@ -620,7 +620,11 @@
     });
 
     fab.addEventListener("click", toggle);
-    fab.addEventListener("mouseenter", hideTooltip);
+    fab.addEventListener("mouseenter", function() {
+      if (autoHideTimer) { clearTimeout(autoHideTimer); autoHideTimer = null; }
+      showTooltip();
+    });
+    fab.addEventListener("mouseleave", hideTooltip);
 
     // Auto-resize textarea
     inputEl.addEventListener("input", function() {
@@ -637,11 +641,25 @@
     sendBtn.addEventListener("click", send);
 
     // ── Delayed FAB reveal + tooltip ─────────────────────────────────────────
+    var autoHideTimer = null;
+
     function hideTooltip() {
       if (!tooltipEl.classList.contains('fc-tip-visible')) return;
       tooltipEl.classList.remove('fc-tip-visible');
       tooltipEl.classList.add('fc-tip-out');
-      setTimeout(function() { tooltipEl.style.display = 'none'; }, 320);
+      setTimeout(function() {
+        if (!tooltipEl.classList.contains('fc-tip-visible')) {
+          tooltipEl.style.display = 'none';
+        }
+      }, 320);
+    }
+
+    function showTooltip() {
+      if (isOpen) return;
+      if (autoHideTimer) { clearTimeout(autoHideTimer); autoHideTimer = null; }
+      tooltipEl.style.display = '';
+      tooltipEl.classList.remove('fc-tip-out', 'fc-tip-visible');
+      setTimeout(function() { tooltipEl.classList.add('fc-tip-visible'); }, 10);
     }
 
     setTimeout(function() {
@@ -650,9 +668,8 @@
       setTimeout(function() { fab.style.animation = 'none'; }, 620);
       // Tooltip appears 350ms after FAB starts animating
       setTimeout(function() {
-        tooltipEl.classList.add('fc-tip-visible');
-        // Auto-dismiss tooltip after 5 seconds
-        setTimeout(hideTooltip, 5000);
+        showTooltip();
+        autoHideTimer = setTimeout(hideTooltip, 5000);
       }, 350);
     }, 3000);
 
