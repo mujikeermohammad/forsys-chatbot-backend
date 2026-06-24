@@ -257,7 +257,7 @@
       position: fixed; bottom: 92px; right: 24px; z-index: 9997;
       background: #fff; color: var(--fc-dark);
       font-family: var(--fc-font); font-size: 13px; font-weight: 500;
-      padding: 11px 15px; border-radius: 12px; max-width: 230px;
+      padding: 11px 15px; border-radius: 12px; max-width: 265px;
       box-shadow: 0 4px 20px rgba(0,0,0,.13), 0 0 0 1px rgba(0,0,0,.04);
       line-height: 1.45; pointer-events: none;
       opacity: 0; transform: translateY(10px) scale(.96);
@@ -620,6 +620,7 @@
     });
 
     fab.addEventListener("click", toggle);
+    fab.addEventListener("mouseenter", hideTooltip);
 
     // Auto-resize textarea
     inputEl.addEventListener("input", function() {
