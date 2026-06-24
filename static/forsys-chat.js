@@ -382,6 +382,7 @@
     var nameInput   = panel.querySelector("#fc-name-input");
     var emailInput  = panel.querySelector("#fc-email-input");
     var submitBtn   = panel.querySelector("#fc-prechat-submit");
+    var skipBtn     = panel.querySelector("#fc-prechat-skip");
 
     var isOpen      = false;
     var isLoading   = false;
@@ -406,6 +407,9 @@
         else nameInput.focus();
       }
     }
+
+    // Skip button
+    skipBtn.addEventListener("click", function() { showChat(); });
 
     // Pre-chat form submit (fields are optional)
     submitBtn.addEventListener("click", function() {
