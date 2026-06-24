@@ -262,7 +262,6 @@
       line-height: 1.45; pointer-events: none;
       opacity: 0; transform: translateY(10px) scale(.96);
       transition: opacity .3s ease, transform .3s ease;
-      white-space: nowrap;
     }
     #fc-tooltip::before {
       content: ''; position: absolute;
