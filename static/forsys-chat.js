@@ -71,6 +71,15 @@
       box-shadow: 0 0 0 2px rgba(74,222,128,.3);
       animation: fc-pulse 2s infinite;
     }
+    #fc-new-chat {
+      background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.25);
+      border-radius: 8px; width: 28px; height: 28px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; flex-shrink: 0; padding: 0;
+      transition: background .15s;
+    }
+    #fc-new-chat:hover { background: rgba(255,255,255,.28); }
+    #fc-new-chat svg { width: 13px; height: 13px; stroke: #fff; }
     @keyframes fc-pulse {
       0%,100% { box-shadow: 0 0 0 2px rgba(74,222,128,.3); }
       50%      { box-shadow: 0 0 0 5px rgba(74,222,128,.1); }
@@ -266,6 +275,12 @@
           <div id="fc-header-title">${TITLE}</div>
         </div>
         <div id="fc-dot" title="Online"></div>
+        <button id="fc-new-chat" title="New conversation" aria-label="Start new conversation">
+          <svg fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          </svg>
+        </button>
       </div>
 
       <div id="fc-prechat">
@@ -385,6 +400,29 @@
     "rocketmail.com","aim.com","excite.com","juno.com","netzero.net","mailfence.com"
   ];
 
+  // ── Session persistence ──────────────────────────────────────────────────────
+  var SESSION_KEY = 'fc_chat_v1';
+
+  function loadSession() {
+    try {
+      var raw = localStorage.getItem(SESSION_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch(e) { return null; }
+  }
+
+  function saveSession(name, email, hist) {
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify({
+        name: name, email: email, history: hist.slice(-30)
+      }));
+    } catch(e) {}
+  }
+
+  function clearSession() {
+    try { localStorage.removeItem(SESSION_KEY); } catch(e) {}
+  }
+  // ─────────────────────────────────────────────────────────────────────────────
+
   function getAnonId() {
     var key = 'fc_guest_id';
     var id;
@@ -423,6 +461,7 @@
     var emailErr    = panel.querySelector("#fc-email-err");
     var submitBtn   = panel.querySelector("#fc-prechat-submit");
     var skipBtn     = panel.querySelector("#fc-prechat-skip");
+    var newChatBtn  = panel.querySelector("#fc-new-chat");
 
     var isOpen      = false;
     var isLoading   = false;
@@ -435,12 +474,49 @@
         leadName  = "Unknown User";
         leadEmail = getAnonId() + "@forsysgpt";
       }
-      prechatEl.style.display = "none";
+      saveSession(leadName, leadEmail, history);
+      prechatEl.style.display  = "none";
       messagesEl.style.display = "flex";
       footerEl.style.display   = "flex";
       addMessage(messagesEl, "bot", GREETING);
       inputEl.focus();
     }
+
+    // ── Restore saved session ─────────────────────────────────────────────────
+    var saved = loadSession();
+    if (saved && saved.email) {
+      leadName  = saved.name  || "Unknown User";
+      leadEmail = saved.email;
+      history   = saved.history || [];
+      prechatEl.style.display  = "none";
+      messagesEl.style.display = "flex";
+      footerEl.style.display   = "flex";
+      if (history.length > 0) {
+        history.forEach(function(msg) {
+          addMessage(messagesEl, msg.role === "assistant" ? "bot" : "user", msg.content);
+        });
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      } else {
+        addMessage(messagesEl, "bot", GREETING);
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // ── New chat button ───────────────────────────────────────────────────────
+    newChatBtn.addEventListener("click", function(e) {
+      e.stopPropagation();
+      clearSession();
+      leadName  = "";
+      leadEmail = "";
+      history   = [];
+      messagesEl.innerHTML     = "";
+      messagesEl.style.display = "none";
+      footerEl.style.display   = "none";
+      prechatEl.style.display  = "flex";
+      nameInput.value  = "";
+      emailInput.value = "";
+      clearEmailErr();
+    });
 
     function toggle() {
       isOpen = !isOpen;
@@ -608,6 +684,7 @@
         history.push({ role: "user", content: text });
         history.push({ role: "assistant", content: fullText });
         while (history.length > 12) history.splice(0, 2);
+        saveSession(leadName, leadEmail, history);
 
       } catch (err) {
         typingEl.remove();
