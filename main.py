@@ -1,5 +1,5 @@
 """
-Forsys RAG — FastAPI Backend (BM25 + Lead Capture + Google Auth edition)
+Forsys RAG — FastAPI Backend (BM25 + Gemini + Lead Capture + Google Auth edition)
 Endpoints:
   GET  /health                         — liveness check
   GET  /widget.js                      — serve widget script
@@ -28,7 +28,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlencode
 
-import anthropic
 import httpx
 from rank_bm25 import BM25Okapi
 from fastapi import FastAPI, HTTPException, Request
@@ -40,7 +39,7 @@ load_dotenv()
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-ANTHROPIC_API_KEY    = os.getenv("ANTHROPIC_API_KEY", "")
+GEMINI_API_KEY       = os.getenv("GEMINI_API_KEY", "")
 ALLOWED_ORIGINS      = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",") if o.strip()] or ["*"]
 DB_PATH              = os.getenv("DB_PATH", str(Path(__file__).parent / "leads.db"))
 
@@ -50,6 +49,9 @@ ALLOWED_EMAILS       = [e.strip().lower() for e in os.getenv("ALLOWED_EMAILS", "
 SESSION_SECRET       = os.getenv("SESSION_SECRET", "change-me-in-production")
 SESSION_MAX_AGE      = 7 * 86400  # 7 days
 BASE_URL             = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:8080")
+
+GEMINI_MODEL    = "gemini-2.5-flash"  # upgrade to gemini-2.5-pro for deeper reasoning
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
 TOP_K       = 5
 MAX_HISTORY = 6
@@ -180,19 +182,41 @@ CONTEXT:
 {context}"""
 
 
+# ── Gemini REST helpers ───────────────────────────────────────────────────────
+
+def build_gemini_history(history: list) -> list[dict]:
+    """Convert chat history to Gemini's role format (user/model)."""
+    result = []
+    for m in history:
+        role = "model" if m.role == "assistant" else "user"
+        result.append({"role": role, "parts": [m.content]})
+    return result
+
+def build_gemini_payload(system_text: str, history: list[dict], user_message: str) -> dict:
+    """Build the Gemini generateContent request body."""
+    contents = []
+    for m in history:
+        contents.append({"role": m["role"], "parts": [{"text": m["parts"][0]}]})
+    contents.append({"role": "user", "parts": [{"text": user_message}]})
+    return {
+        "system_instruction": {"parts": [{"text": system_text}]},
+        "contents": contents,
+        "generationConfig": {"maxOutputTokens": 1024, "temperature": 0.4},
+    }
+
+
 # ── Globals ───────────────────────────────────────────────────────────────────
 
-docs: list[dict]          = []
-bm25: BM25Okapi           = None
-anthropic_async_client: anthropic.AsyncAnthropic = None
+docs: list[dict] = []
+bm25: BM25Okapi  = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global docs, bm25, anthropic_async_client
+    global docs, bm25
 
-    if not ANTHROPIC_API_KEY:
-        raise RuntimeError("ANTHROPIC_API_KEY is not set.")
+    if not GEMINI_API_KEY:
+        raise RuntimeError("GEMINI_API_KEY is not set.")
 
     print("[1] Initialising database...", flush=True)
     init_db()
@@ -204,9 +228,7 @@ async def lifespan(app: FastAPI):
     print("[3] Building BM25 index...", flush=True)
     bm25 = BM25Okapi([d["text"].lower().split() for d in docs])
 
-    print("[4] Creating Anthropic client...", flush=True)
-    anthropic_async_client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
-    print(f"Ready — {len(docs)} documents indexed.", flush=True)
+    print(f"Ready — {len(docs)} documents indexed, model: {GEMINI_MODEL}", flush=True)
 
     render_url = os.getenv("RENDER_EXTERNAL_URL", "")
     async def keep_alive():
@@ -300,25 +322,38 @@ async def chat(req: ChatRequest):
         except Exception as e:
             print(f"[LEAD] upsert failed: {e}", flush=True)
 
-    system   = SYSTEM_PROMPT.format(context=context)
-    history  = req.history[-(MAX_HISTORY * 2):]
-    messages = [{"role": m.role, "content": m.content} for m in history]
-    messages.append({"role": "user", "content": req.message})
+    system_text = SYSTEM_PROMPT.format(context=context)
+    history     = req.history[-(MAX_HISTORY * 2):]
+    gemini_hist = build_gemini_history(history)
+    payload     = build_gemini_payload(system_text, gemini_hist, req.message)
+    url         = f"{GEMINI_BASE_URL}/models/{GEMINI_MODEL}:streamGenerateContent?key={GEMINI_API_KEY}&alt=sse"
 
     async def generate():
         full_answer = ""
         try:
             yield f"data: {json.dumps({'type': 'meta', 'sources': sources, 'embed_links': {}})}\n\n"
-            async with anthropic_async_client.messages.stream(
-                model="claude-sonnet-4-6",
-                max_tokens=1024,
-                system=system,
-                messages=messages,
-            ) as stream:
-                async for text in stream.text_stream:
-                    full_answer += text
-                    yield f"data: {json.dumps({'type': 'delta', 'text': text})}\n\n"
+
+            async with httpx.AsyncClient(timeout=60) as client:
+                async with client.stream("POST", url, json=payload) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data:"):
+                            continue
+                        raw = line[len("data:"):].strip()
+                        if not raw or raw == "[DONE]":
+                            continue
+                        try:
+                            chunk = json.loads(raw)
+                            parts = (chunk.get("candidates") or [{}])[0].get("content", {}).get("parts", [])
+                            text  = "".join(p.get("text", "") for p in parts)
+                            if text:
+                                full_answer += text
+                                yield f"data: {json.dumps({'type': 'delta', 'text': text})}\n\n"
+                        except Exception:
+                            continue
+
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
         except Exception as e:
             print(f"[STREAM ERROR] {type(e).__name__}: {e}", flush=True)
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
